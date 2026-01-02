@@ -1,0 +1,33 @@
+{
+  "name": "FileUploader",
+  "endpoint": "fileupload",
+  "version": "1.0.0",
+  "description": "Generic file uploader payload for uploading arbitrary files to the server",
+  "serverUrl": "<<SERVERURL>>",
+  "downloadFolder": "FileUpload",
+  "mainScript": "FileUpload.ps1",
+  "parameters": [
+    {
+      "name": "ServerUrl",
+      "type": "string",
+      "description": "Base server URL, e.g. https://example.com:3500"
+    },
+    {
+      "name": "FilePath",
+      "type": "string",
+      "description": "Path to the file to be uploaded"
+    },
+    {
+      "name": "AuthKey",
+      "type": "string",
+      "description": "Authentication key for secure upload"
+    }
+  ],
+  "requirements": [
+    "Windows 10/11",
+    "PowerShell 5.1+",
+    "Network connectivity"
+  ],
+  "author": "jeamajoal",
+  "license": "MIT"
+}

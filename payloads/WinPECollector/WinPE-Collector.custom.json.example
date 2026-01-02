@@ -1,0 +1,13 @@
+{
+  "orgProgramDataFolder": "My App",
+  "extraFolders": [
+    {
+      "name": "CustomLogs",
+      "path": "Users\\Public\\Documents\\MyLogs"
+    },
+    {
+      "name": "VendorTool",
+      "path": "ProgramData\\VendorTool"
+    }
+  ]
+}

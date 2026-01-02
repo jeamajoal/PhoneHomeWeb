@@ -1,0 +1,53 @@
+{
+  "name": "WinPE Offline Diagnostic Collector",
+  "endpoint": "winpecollector-installer",
+  "version": "1.0.0",
+  "description": "Collects diagnostic data from offline Windows installations in WinPE environment. Supports BitLocker unlock, event logs, registry hives, crash dumps, and more.",
+  "created": "2025-12-16",
+  "environment": "WinPE",
+  "requirements": [
+    "Windows PE with PowerShell support",
+    "Network connectivity (for upload)",
+    "BitLocker recovery key (if drive is encrypted)"
+  ],
+  "features": [
+    "BitLocker unlock with recovery key",
+    "Temporary drive-letter assignment in WinPE (session-only)",
+    "Offline Windows detection",
+    "Event log collection (.evtx files)",
+    "Registry hive collection",
+    "Windows Update logs",
+    "CBS/DISM logs",
+    "Windows setup/upgrade log collection (Panther/MoSetup)",
+    "Driver installation log collection (SetupAPI)",
+    "Startup Repair log collection (SrtTrail)",
+    "LiveKernelReports dump collection",
+    "Crash dump collection",
+    "Network upload capability"
+  ],
+  "output": {
+    "format": "ZIP archive",
+    "naming": "WinPE-Diag-{ComputerName}-{Serial}-{Timestamp}.zip",
+    "upload_url": "<<SERVERURL>>/upload"
+  },
+  "collected_data": [
+    "Event logs (all .evtx files)",
+    "Registry hives (SYSTEM, SOFTWARE, DEFAULT)",
+    "WinPE environment snapshot (network + storage layout)",
+    "Windows Update logs (C:\\Windows\\Logs\\WindowsUpdate)",
+    "CBS logs (Component-Based Servicing)",
+    "DISM logs (Image servicing)",
+    "Panther logs (Windows Setup)",
+    "MoSetup logs (Windows Setup/Upgrade)",
+    "SetupAPI device installation logs (setupapi*.log)",
+    "Startup Repair logs (SrtTrail.txt when present)",
+    "NetSetup logs (domain join / network setup history when present)",
+    "BitLocker status",
+    "Windows version information",
+    "Servicing package inventory (up to 100 KB-named .mum packages)",
+    "Crash dumps (minidumps, MEMORY.DMP if < 500MB, and LiveKernelReports .dmp files if < 500MB)",
+    "Optional extra folders (configurable)"
+  ],
+  "author": "jeamajoal",
+  "license": "MIT"
+}

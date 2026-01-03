@@ -15,6 +15,55 @@ try {
 
 const app = express();
 
+// Request logging (JSON lines)
+const requestLogDir = path.resolve(__dirname, envStr("REQUEST_LOG_DIR", "logs"));
+const requestLogPathRaw = envStr("REQUEST_LOG_PATH", "request_logs.jsonl");
+
+const requestLogPath = path.isAbsolute(requestLogPathRaw)
+  ? requestLogPathRaw
+  : requestLogPathRaw.includes("/") || requestLogPathRaw.includes("\\")
+    ? path.resolve(__dirname, requestLogPathRaw)
+    : path.join(requestLogDir, requestLogPathRaw);
+
+try {
+  fs.mkdirSync(path.dirname(requestLogPath), { recursive: true });
+} catch (err) {
+  console.error("Failed to create log directory:", err);
+}
+let requestLogStream = null;
+try {
+  requestLogStream = fs.createWriteStream(requestLogPath, { flags: "a" });
+  requestLogStream.on("error", (err) => {
+    console.error("Request log stream error:", err);
+  });
+} catch (err) {
+  console.error("Failed to open request log stream:", err);
+}
+
+function safeJsonLine(obj) {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return JSON.stringify({ ts: new Date().toISOString(), type: "log_error" });
+  }
+}
+
+function logRequestEvent(event) {
+  const line = safeJsonLine(event) + "\n";
+  if (requestLogStream && requestLogStream.writable) {
+    requestLogStream.write(line);
+  }
+}
+
+process.on("SIGINT", () => {
+  if (requestLogStream) requestLogStream.end();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  if (requestLogStream) requestLogStream.end();
+  process.exit(0);
+});
+
 function envBool(name, defaultValue = false) {
   const raw = process.env[name];
   if (raw === undefined) return defaultValue;
@@ -339,27 +388,73 @@ const upload = multer({
 // Middleware to parse JSON
 app.use(express.json());
 
-// Request logging middleware - log all requests
+// Request logging middleware - structured and non-blocking
 app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const ts = new Date().toISOString();
+  const startHr = process.hrtime.bigint();
+  const requestId = crypto.randomBytes(12).toString("hex");
+
+  res.setHeader("X-Request-Id", requestId);
+
   const clientIP =
-    req.ip || req.connection.remoteAddress || req.headers["x-forwarded-for"];
+    req.ip || req.connection?.remoteAddress || req.headers["x-forwarded-for"];
   const userAgent = req.get("User-Agent") || "Unknown";
+  const contentLength = req.get("Content-Length") || null;
 
-  // Format log with better spacing
-  console.log("\n" + "=".repeat(80));
-  console.log(`TIME: ${timestamp}`);
-  console.log(`REQUEST: ${req.method} ${req.url}`);
-  console.log(`HOSTNAME: ${req.hostname}`);
-  console.log(`CLIENT: ${clientIP}`);
-  console.log(`USER-AGENT: ${userAgent}`);
+  logRequestEvent({
+    ts,
+    type: "request_start",
+    id: requestId,
+    method: req.method,
+    url: req.originalUrl || req.url,
+    host: req.hostname,
+    ip: clientIP,
+    ua: userAgent,
+    contentLength,
+  });
 
-  // Log to file
-  const logFilePath = path.resolve(__dirname, envStr("REQUEST_LOG_PATH", "request_logs.txt"));
-  const logEntry = `${timestamp} | ${req.method} ${req.url} | ${req.hostname} | ${clientIP} | ${userAgent}\n`;
-  fs.appendFileSync(logFilePath, logEntry);
+  let loggedEnd = false;
+  function logEnd(type) {
+    if (loggedEnd) return;
+    loggedEnd = true;
+    const endHr = process.hrtime.bigint();
+    const durationMs = Number(endHr - startHr) / 1e6;
+    const resContentLength = res.getHeader("Content-Length") || null;
+
+    logRequestEvent({
+      ts: new Date().toISOString(),
+      type,
+      id: requestId,
+      method: req.method,
+      url: req.originalUrl || req.url,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 1000) / 1000,
+      resContentLength,
+    });
+  }
+
+  res.on("finish", () => logEnd("request_finish"));
+  res.on("close", () => logEnd("request_close"));
+  req.on("aborted", () => logEnd("request_aborted"));
+
   next();
 });
+
+// Health endpoint (disabled by default; enable only for troubleshooting)
+if (envBool("ENABLE_HEALTH_ENDPOINT", false)) {
+  app.get("/api/health", (req, res) => {
+    const k = req.get("X-Auth-Key");
+    if (k !== STATIC_KEY && k !== HT_STATIC_KEY) {
+      // Avoid advertising the endpoint; match the project's "quiet" posture.
+      return res.status(404).end();
+    }
+    res.status(200).json({
+      ok: true,
+      service: "PhoneHomeWeb",
+      time: new Date().toISOString(),
+    });
+  });
+}
 
 // Static key validation middleware - appears unresponsive without key
 app.use((req, res, next) => {

@@ -43,6 +43,21 @@ phw_prompt_yn() {
   [[ "$answer" == "y" || "$answer" == "Y" ]]
 }
 
+phw_prompt_text() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local answer
+
+  if [[ -n "$default_value" ]]; then
+    read -r -p "$prompt" answer || true
+    answer="${answer:-$default_value}"
+  else
+    read -r -p "$prompt" answer || true
+  fi
+
+  echo "$answer"
+}
+
 phw_apt_update_once() {
   local stamp="/var/lib/apt/periodic/update-success-stamp"
   if [[ ! -f "$stamp" ]] || find "$stamp" -mmin +60 >/dev/null 2>&1; then
@@ -97,6 +112,63 @@ phw_ensure_node() {
   fi
 }
 
+phw_is_git_repo() {
+  local repo_root="$1"
+  [[ -d "$repo_root/.git" ]]
+}
+
+phw_git_clean_worktree() {
+  local repo_root="$1"
+  (cd "$repo_root" && git status --porcelain 2>/dev/null | wc -l | tr -d ' ') | grep -qE '^0$'
+}
+
+phw_git_current_branch() {
+  local repo_root="$1"
+  (cd "$repo_root" && git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+}
+
+phw_git_update_repo() {
+  # Safely update repo to a given branch.
+  # - Refuses to proceed if worktree is dirty (unless user confirms)
+  # - Fetches, then checks out branch, then pulls
+  local repo_root="$1"
+  local remote_name="$2"
+  local branch_name="$3"
+
+  phw_need_cmd git
+  (cd "$repo_root" && git rev-parse --is-inside-work-tree >/dev/null 2>&1) || phw_die "Not a git repo: $repo_root"
+
+  if ! phw_git_clean_worktree "$repo_root"; then
+    phw_log "Git worktree has local changes."
+    if ! phw_prompt_yn "Proceed with update anyway? This may fail/overwrite local changes. (y/N) " "n"; then
+      phw_log "Skipping git update."
+      return 0
+    fi
+  fi
+
+  phw_log "Fetching updates (remote: ${remote_name})..."
+  (cd "$repo_root" && git fetch --prune "$remote_name")
+
+  # Prefer remote tracking branch if it exists.
+  if (cd "$repo_root" && git show-ref --verify --quiet "refs/remotes/${remote_name}/${branch_name}"); then
+    phw_log "Checking out branch: ${branch_name}"
+    (cd "$repo_root" && {
+      if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+        git checkout "$branch_name"
+      else
+        git checkout -b "$branch_name" --track "${remote_name}/${branch_name}"
+      fi
+    })
+  else
+    # If the branch doesn't exist remotely, still allow local branch checkout (useful for testing).
+    phw_log "Remote branch not found: ${remote_name}/${branch_name}. Attempting local checkout."
+    (cd "$repo_root" && git checkout "$branch_name") || phw_die "Branch not found: $branch_name"
+  fi
+
+  phw_log "Pulling latest commits..."
+  (cd "$repo_root" && git pull "$remote_name" "$branch_name")
+}
+
 phw_ensure_env_file() {
   local repo_root="$1"
   local env_path="$repo_root/.env"
@@ -108,7 +180,55 @@ phw_ensure_env_file() {
     cp "$example_path" "$env_path"
     phw_log "Created .env from .env.example"
   else
-    phw_log ".env already exists"
+    phw_log ".env already exists - merging any missing defaults"
+    phw_env_merge_missing_defaults "$env_path" "$example_path"
+  fi
+}
+
+phw_env_key_exists() {
+  # Returns 0 if KEY exists (as a key assignment) in env_file.
+  local env_file="$1"
+  local key="$2"
+  [[ -f "$env_file" ]] || return 1
+  grep -qE "^[[:space:]]*${key}=" "$env_file"
+}
+
+phw_env_merge_missing_defaults() {
+  # For each KEY=VALUE in example file, add KEY=VALUE to env file if KEY is missing.
+  # Preserves all existing lines/values in the env file.
+  local env_file="$1"
+  local example_file="$2"
+
+  [[ -f "$env_file" ]] || phw_die "Env file not found: $env_file"
+  [[ -f "$example_file" ]] || phw_die "Example env file not found: $example_file"
+
+  local added=0
+  local line key value
+
+  # Read example file line-by-line; only consider simple KEY=VALUE lines.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Trim CR
+    line="${line%\r}"
+    # Skip comments/empty
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+    # Only process KEY=VALUE
+    if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+
+      if ! phw_env_key_exists "$env_file" "$key"; then
+        echo "" >> "$env_file"
+        echo "${key}=${value}" >> "$env_file"
+        added=$((added+1))
+      fi
+    fi
+  done < "$example_file"
+
+  if [[ "$added" -gt 0 ]]; then
+    phw_log "Merged $added missing .env keys from .env.example"
+  else
+    phw_log "No missing .env keys to merge"
   fi
 }
 
@@ -272,11 +392,27 @@ phw_grant_repo_access() {
   chmod -R 770 "$uploads_dir"
 
   local log_path rel_log
+  local log_dir rel_log_dir
+  rel_log_dir="$(phw_env_get_raw "$env_file" "REQUEST_LOG_DIR")"
+  log_dir="$repo_root/${rel_log_dir:-logs}"
+
   rel_log="$(phw_env_get_raw "$env_file" "REQUEST_LOG_PATH")"
-  log_path="$repo_root/${rel_log:-request_logs.txt}"
+  log_path="${rel_log:-request_logs.jsonl}"
+
+  # If REQUEST_LOG_PATH is just a filename, place it under REQUEST_LOG_DIR.
+  if [[ "$log_path" != /* && "$log_path" != *"/"* ]]; then
+    log_path="$log_dir/$log_path"
+  elif [[ "$log_path" != /* ]]; then
+    # Relative path with directories -> relative to repo root.
+    log_path="$repo_root/$log_path"
+  fi
+
+  mkdir -p "$(dirname "$log_path")"
   touch "$log_path"
-  chown "${user}:${group}" "$log_path"
-  chmod 660 "$log_path"
+  chown -R "${user}:${group}" "$log_dir" 2>/dev/null || true
+  chown "${user}:${group}" "$log_path" 2>/dev/null || true
+  chmod -R 770 "$log_dir" 2>/dev/null || true
+  chmod 660 "$log_path" 2>/dev/null || true
 }
 
 phw_install_systemd_service() {

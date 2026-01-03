@@ -355,3 +355,10 @@ phw_list_uploads() {
     -H "X-Auth-Key: ${ht_key}" \
     "${server_url%/}/uploads"
 }
+
+# If this file is executed directly, forward to the real installer entrypoint.
+# This library is primarily intended to be sourced by scripts/Install-PhoneHomeWeb.sh.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  exec "${script_dir}/Install-PhoneHomeWeb.sh" "$@"
+fi

@@ -85,7 +85,7 @@ Example:
 
 Use:
 
-- `scripts/PhoneHomeWeb.Install.sh`
+- `scripts/Install-PhoneHomeWeb.sh`
 
 It installs Node.js, writes a `.env`, and sets up a systemd service.
 

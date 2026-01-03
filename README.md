@@ -44,7 +44,7 @@ Server default URL:
 TLS is supported via environment variables.
 
 - Set `DISABLE_SSL=false`
-- Set `TLS_KEY_FILE` and `TLS_CERT_FILE`
+- Provide either `TLS_PFX_FILE` (a `.pfx/.p12` bundle) or `TLS_KEY_FILE` and `TLS_CERT_FILE` (PEM)
 - Optionally set `TLS_CA_FILE`
 
 By default, cert files are expected under `CERTS_DIR` (default: `certs/`).

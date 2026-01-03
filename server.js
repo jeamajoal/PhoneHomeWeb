@@ -165,6 +165,8 @@ const certsDir = path.resolve(__dirname, envStr("CERTS_DIR", "certs"));
 const tlsKeyFile = envStr("TLS_KEY_FILE", "");
 const tlsCertFile = envStr("TLS_CERT_FILE", "");
 const tlsCaFile = envStr("TLS_CA_FILE", "");
+const tlsPfxFile = envStr("TLS_PFX_FILE", "");
+const tlsPfxPassphrase = envStr("TLS_PFX_PASSPHRASE", "");
 
 function resolveIfSet(baseDir, fileName) {
   if (!fileName) return null;
@@ -174,6 +176,7 @@ function resolveIfSet(baseDir, fileName) {
 const keyPath = resolveIfSet(certsDir, tlsKeyFile);
 const certPath = resolveIfSet(certsDir, tlsCertFile);
 const caPath = resolveIfSet(certsDir, tlsCaFile);
+const pfxPath = resolveIfSet(certsDir, tlsPfxFile);
 
 // Check if SSL is disabled via environment variable
 const disableSSL = envBool("DISABLE_SSL", false);
@@ -184,20 +187,61 @@ if (!disableSSL) {
     fs.mkdirSync(certsDir, { recursive: true });
   }
 
-  if (!tlsKeyFile || !tlsCertFile) {
+  const usingPfx = Boolean(tlsPfxFile);
+  const usingPemPair = Boolean(tlsKeyFile && tlsCertFile);
+
+  if (!usingPfx && !usingPemPair) {
     console.log("\n" + "=".repeat(80));
     console.log("SSL CONFIG INCOMPLETE");
     console.log("=".repeat(80));
-    console.log("SSL is enabled but TLS cert env vars are not set.");
-    console.log("Set these env vars (or set DISABLE_SSL=true):");
+    console.log("SSL is enabled but TLS certificate env vars are not set.");
+    console.log("Provide either a PFX bundle or a PEM key+cert pair (or set DISABLE_SSL=true):");
+    console.log(`  TLS_PFX_FILE  - ${tlsPfxFile ? "Set" : "Missing"}`);
     console.log(`  TLS_KEY_FILE  - ${tlsKeyFile ? "Set" : "Missing"}`);
     console.log(`  TLS_CERT_FILE - ${tlsCertFile ? "Set" : "Missing"}`);
     console.log("=".repeat(80) + "\n");
     sslOptions = null;
   }
 
-  // Generate or load SSL certificates
-  if (sslOptions === null && keyPath && certPath && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  // Load SSL certificates
+  if (sslOptions === null && usingPfx && pfxPath && fs.existsSync(pfxPath)) {
+    try {
+      sslOptions = {
+        ...TLS_CONFIG,
+        pfx: fs.readFileSync(pfxPath),
+      };
+
+      if (tlsPfxPassphrase) {
+        sslOptions.passphrase = tlsPfxPassphrase;
+      }
+
+      // Add CA bundle if available (rarely needed with a well-formed PFX, but supported)
+      if (caPath && fs.existsSync(caPath)) {
+        sslOptions.ca = fs.readFileSync(caPath);
+      }
+
+      console.log("\n" + "=".repeat(80));
+      console.log("SSL CERTIFICATES LOADED");
+      console.log("=".repeat(80));
+      console.log(`PFX bundle: ${pfxPath}`);
+      console.log(`CA Bundle: ${caPath && fs.existsSync(caPath) ? caPath : "Not found"}`);
+      console.log("=".repeat(80) + "\n");
+    } catch (error) {
+      console.log("\n" + "=".repeat(80));
+      console.log("SSL ERROR - Invalid PFX file");
+      console.log("=".repeat(80));
+      console.error("Error:", error.message);
+      console.log("=".repeat(80) + "\n");
+      sslOptions = null;
+    }
+  } else if (
+    sslOptions === null &&
+    usingPemPair &&
+    keyPath &&
+    certPath &&
+    fs.existsSync(keyPath) &&
+    fs.existsSync(certPath)
+  ) {
     try {
       // Load CA-issued certificates with TLS configuration
       sslOptions = {
@@ -226,17 +270,18 @@ if (!disableSSL) {
       console.log("=".repeat(80) + "\n");
       sslOptions = null;
     }
-  } else {
+  } else if (sslOptions === null && (usingPfx || usingPemPair)) {
     console.log("\n" + "=".repeat(80));
     console.log("SSL CERTIFICATES NOT FOUND");
     console.log("=".repeat(80));
     console.log("Missing files:");
-    console.log(
-      `  ${keyPath || "(TLS_KEY_FILE not set)"} - ${keyPath && fs.existsSync(keyPath) ? "Found" : "Missing"}`
-    );
-    console.log(
-      `  ${certPath || "(TLS_CERT_FILE not set)"} - ${certPath && fs.existsSync(certPath) ? "Found" : "Missing"}`
-    );
+    if (usingPfx) {
+      console.log(`  ${pfxPath || "(TLS_PFX_FILE not set)"} - ${pfxPath && fs.existsSync(pfxPath) ? "Found" : "Missing"}`);
+    }
+    if (usingPemPair) {
+      console.log(`  ${keyPath || "(TLS_KEY_FILE not set)"} - ${keyPath && fs.existsSync(keyPath) ? "Found" : "Missing"}`);
+      console.log(`  ${certPath || "(TLS_CERT_FILE not set)"} - ${certPath && fs.existsSync(certPath) ? "Found" : "Missing"}`);
+    }
     console.log("\nAfter receiving your SSL certificate from the CA:");
     console.log(`1. Set TLS_KEY_FILE and save the private key to: ${tlsKeyFile || "<your-key-filename>"}`);
     console.log(`2. Set TLS_CERT_FILE and save the certificate to: ${tlsCertFile || "<your-cert-filename>"}`);

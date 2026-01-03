@@ -19,11 +19,19 @@ const app = express();
 const requestLogDir = path.resolve(__dirname, envStr("REQUEST_LOG_DIR", "logs"));
 const requestLogPathRaw = envStr("REQUEST_LOG_PATH", "request_logs.jsonl");
 
+const blockedLogPathRaw = envStr("BLOCKED_LOG_PATH", "blocked.jsonl");
+
 const requestLogPath = path.isAbsolute(requestLogPathRaw)
   ? requestLogPathRaw
   : requestLogPathRaw.includes("/") || requestLogPathRaw.includes("\\")
     ? path.resolve(__dirname, requestLogPathRaw)
     : path.join(requestLogDir, requestLogPathRaw);
+
+const blockedLogPath = path.isAbsolute(blockedLogPathRaw)
+  ? blockedLogPathRaw
+  : blockedLogPathRaw.includes("/") || blockedLogPathRaw.includes("\\")
+    ? path.resolve(__dirname, blockedLogPathRaw)
+    : path.join(requestLogDir, blockedLogPathRaw);
 
 try {
   fs.mkdirSync(path.dirname(requestLogPath), { recursive: true });
@@ -38,6 +46,59 @@ try {
   });
 } catch (err) {
   console.error("Failed to open request log stream:", err);
+}
+
+let blockedLogStream = null;
+let blockedLogDate = null;
+
+function ymd(dateObj) {
+  // YYYY-MM-DD in local time
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function datedLogPath(basePath, dateStr) {
+  const dir = path.dirname(basePath);
+  const ext = path.extname(basePath);
+  const name = path.basename(basePath, ext);
+  if (ext) return path.join(dir, `${name}-${dateStr}${ext}`);
+  return path.join(dir, `${name}-${dateStr}`);
+}
+
+function ensureBlockedLogStream() {
+  const today = ymd(new Date());
+  if (blockedLogStream && blockedLogDate === today && blockedLogStream.writable) {
+    return;
+  }
+
+  // Rotate: close old stream and open today's file
+  try {
+    if (blockedLogStream) blockedLogStream.end();
+  } catch {
+    // ignore
+  }
+
+  blockedLogDate = today;
+  const todaysPath = datedLogPath(blockedLogPath, today);
+  try {
+    fs.mkdirSync(path.dirname(todaysPath), { recursive: true });
+    blockedLogStream = fs.createWriteStream(todaysPath, { flags: "a" });
+    blockedLogStream.on("error", (err) => {
+      console.error("Blocked log stream error:", err);
+    });
+  } catch (err) {
+    console.error("Failed to open blocked log stream:", err);
+    blockedLogStream = null;
+  }
+}
+
+try {
+  fs.mkdirSync(path.dirname(blockedLogPath), { recursive: true });
+  ensureBlockedLogStream();
+} catch (err) {
+  console.error("Failed to open blocked log stream:", err);
 }
 
 function safeJsonLine(obj) {
@@ -55,12 +116,22 @@ function logRequestEvent(event) {
   }
 }
 
+function logBlockedEvent(event) {
+  ensureBlockedLogStream();
+  const line = safeJsonLine(event) + "\n";
+  if (blockedLogStream && blockedLogStream.writable) {
+    blockedLogStream.write(line);
+  }
+}
+
 process.on("SIGINT", () => {
   if (requestLogStream) requestLogStream.end();
+  if (blockedLogStream) blockedLogStream.end();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
   if (requestLogStream) requestLogStream.end();
+  if (blockedLogStream) blockedLogStream.end();
   process.exit(0);
 });
 
@@ -394,6 +465,7 @@ app.use((req, res, next) => {
   const startHr = process.hrtime.bigint();
   const requestId = crypto.randomBytes(12).toString("hex");
 
+  req.requestId = requestId;
   res.setHeader("X-Request-Id", requestId);
 
   const clientIP =
@@ -494,6 +566,20 @@ app.use((req, res, next) => {
   // Log unauthorized access attempt but don't respond
   console.log(`✗ BLOCKED: No valid authentication key`);
   console.log("=".repeat(80) + "\n");
+
+  // Dedicated blocked log (JSONL)
+  logBlockedEvent({
+    ts: new Date().toISOString(),
+    type: "blocked",
+    id: req.requestId || null,
+    method: req.method,
+    url: req.originalUrl || req.url,
+    host: req.hostname,
+    ip: req.ip || req.connection?.remoteAddress || req.headers["x-forwarded-for"],
+    ua: req.get("User-Agent") || "Unknown",
+    reason: "missing_or_invalid_x_auth_key",
+  });
+
   // Intentionally don't send any response - appears unresponsive
   setTimeout(() => {}, Math.random() * 1000);
   return; // Silent drop

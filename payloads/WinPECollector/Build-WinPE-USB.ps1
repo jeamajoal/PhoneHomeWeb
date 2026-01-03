@@ -320,9 +320,50 @@ function Format-SelectedDrive {
     $newDriveLetter = $partition.DriveLetter
     Write-Status "Partition created with drive letter: $newDriveLetter" "Gray"
 
-    # Format as NTFS
+    # Refresh storage cache; sometimes the volume/drive letter isn't immediately materialized.
+    try { Update-HostStorageCache | Out-Null } catch { }
+
+    # If DriveLetter didn't populate yet, try to locate the partition and assign one.
+    if (-not $newDriveLetter) {
+        try {
+            $partition = Get-Partition -DiskNumber $diskNumber | Sort-Object -Property Size -Descending | Select-Object -First 1
+            $newDriveLetter = $partition.DriveLetter
+        } catch { }
+    }
+
+    if (-not $newDriveLetter) {
+        # Choose an available letter (avoid common removable letters if possible)
+        $used = (Get-Volume -ErrorAction SilentlyContinue | Where-Object DriveLetter | ForEach-Object { $_.DriveLetter.ToString().ToUpperInvariant() })
+        $candidates = @('U','V','W','X','Y','Z','T','S','R','Q','P','O','N','M','L','K','J','I','H','G','F','E','D')
+        $pick = $candidates | Where-Object { $used -notcontains $_ } | Select-Object -First 1
+        if (-not $pick) { throw "No free drive letters available to assign to the USB partition." }
+
+        Write-Status "Assigning drive letter: $pick" "Gray"
+        Set-Partition -DiskNumber $diskNumber -PartitionNumber $partition.PartitionNumber -NewDriveLetter $pick -ErrorAction Stop | Out-Null
+        $newDriveLetter = $pick
+    }
+
+    # Format as NTFS (retry briefly in case the volume object is still appearing)
     Write-Status "Formatting as NTFS..." "Gray"
-    Format-Volume -DriveLetter $newDriveLetter -FileSystem NTFS -NewFileSystemLabel "WINPE_DIAG" -Confirm:$false -ErrorAction Stop | Out-Null
+    $formatRetries = 0
+    $formatMax = 10
+    while ($true) {
+        try {
+            try { Update-HostStorageCache | Out-Null } catch { }
+            # Prefer DriveLetter, but fall back to formatting by Partition object if needed.
+            if (Get-Volume -DriveLetter $newDriveLetter -ErrorAction SilentlyContinue) {
+                Format-Volume -DriveLetter $newDriveLetter -FileSystem NTFS -NewFileSystemLabel "WINPE_DIAG" -Confirm:$false -ErrorAction Stop | Out-Null
+            } else {
+                $p = Get-Partition -DiskNumber $diskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop
+                Format-Volume -Partition $p -FileSystem NTFS -NewFileSystemLabel "WINPE_DIAG" -Confirm:$false -ErrorAction Stop | Out-Null
+            }
+            break
+        } catch {
+            $formatRetries++
+            if ($formatRetries -ge $formatMax) { throw }
+            Start-Sleep -Milliseconds 750
+        }
+    }
 
     # Store the final drive letter for use in file copy operations
     $USBDriveLetter = $newDriveLetter

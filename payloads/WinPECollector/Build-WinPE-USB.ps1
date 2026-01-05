@@ -106,12 +106,12 @@ function Assert-Prerequisites {
     Write-Status "Running with Administrator privileges" "Green"
 
     # Find ADK
-    if ([string]::IsNullOrEmpty($ADKPath)) {
+    if ([string]::IsNullOrEmpty($script:ADKPath)) {
         Write-Status "Searching for Windows ADK installation..." "Cyan"
-        $ADKPath = Find-ADKPath
+        $script:ADKPath = Find-ADKPath
     }
 
-    if ([string]::IsNullOrEmpty($ADKPath)) {
+    if ([string]::IsNullOrEmpty($script:ADKPath)) {
         Write-Host ""
         Write-Host "ERROR: Windows ADK not found!" -ForegroundColor Red
         Write-Host ""
@@ -123,10 +123,10 @@ function Assert-Prerequisites {
         exit 1
     }
 
-    Write-Status "Found ADK at: $ADKPath" "Green"
+    Write-Status "Found ADK at: $script:ADKPath" "Green"
 
     # Check WinPE add-on
-    if (-not (Test-WinPEAddon -ADKPath $ADKPath)) {
+    if (-not (Test-WinPEAddon -ADKPath $script:ADKPath)) {
         Write-Host ""
         Write-Host "ERROR: Windows PE add-on not installed!" -ForegroundColor Red
         Write-Host ""
@@ -694,6 +694,9 @@ try {
     $collectorDir = "$mountDir\WinPECollector"
     New-Item -ItemType Directory -Path $collectorDir -Force | Out-Null
 
+    # Shared request headers for any server downloads
+    $headers = @{ 'X-Auth-Key' = $AuthKey }
+
     if (-not [string]::IsNullOrWhiteSpace($CollectorScriptPath)) {
         Write-Status "Embedding local WinPE Collector from: $CollectorScriptPath" "Cyan"
         if (-not (Test-Path $CollectorScriptPath)) {
@@ -710,7 +713,6 @@ try {
     }
     else {
         Write-Status "Downloading WinPE Collector..." "Cyan"
-        $headers = @{ 'X-Auth-Key' = $AuthKey }
         
         try {
             Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/WinPECollector/download/WinPE-Collector.ps1" -OutFile "$collectorDir\WinPE-Collector.ps1" -Headers $headers

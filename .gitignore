@@ -12,6 +12,9 @@ uploads/
 *.zip
 request_logs.txt
 
+# Allow shipping specific payload zips
+!payloads/WinPECollector/*.zip
+
 # Payloads we intentionally do not ship
 payloads/IntuneDiagnostics/
 

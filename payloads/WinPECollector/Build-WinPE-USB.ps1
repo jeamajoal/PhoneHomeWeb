@@ -905,15 +905,15 @@ powershell -NoExit -ExecutionPolicy Bypass -File "X:\WinPECollector\Start-Collec
         Write-Status "Note: DISM scratch space configuration not available on this ADK version" "Gray"
     }
     
-    # Add drivers from server payload Winpe-Drivers
-    Write-Status "Adding additional drivers (if any)..." "Cyan"
+    # Add drivers from server payload (optional)
+    Write-Status "Adding additional drivers (hp-network.zip, if present)..." "Cyan"
     try {
-        Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/Winpe-Drivers/download/network.zip" -OutFile "$workDir\network.zip" -Headers $headers
-        if (Test-Path "$workDir\network.zip") {
+        Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/WinPECollector/download/hp-network.zip" -OutFile "$workDir\hp-network.zip" -Headers $headers
+        if (Test-Path "$workDir\hp-network.zip") {
             # Extract drivers
             $driverExtractPath = "$workDir\drivers"
             New-Item -ItemType Directory -Path $driverExtractPath -Force | Out-Null
-            Expand-Archive -Path "$workDir\network.zip" -DestinationPath $driverExtractPath -Force
+            Expand-Archive -Path "$workDir\hp-network.zip" -DestinationPath $driverExtractPath -Force
             
             # Add drivers to WinPE image
             $driverFiles = Get-ChildItem -Path $driverExtractPath -Recurse -Include *.inf

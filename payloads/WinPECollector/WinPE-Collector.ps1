@@ -182,47 +182,31 @@ function Get-NetworkStatus {
     }
 
     try {
-        if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
-            $ip = Get-NetIPAddress -PrefixOrigin DHCP -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -and -not $_.IPAddress.StartsWith('169.254.') } | Select-Object -First 1
-            if ($ip -and $ip.IPAddress) {
-                $status.HasIPv4 = $true
-                $status.IPv4Addresses = @($ip.IPAddress)
-                $status.intIndex = $ip.InterfaceIndex
-
-                if ($status.intIndex -and (Get-Command Get-NetRoute -ErrorAction SilentlyContinue)) {
-                    $route = Get-NetRoute -AddressFamily IPv4 -InterfaceIndex $status.intIndex -ErrorAction Stop |
-                        Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
-                        Sort-Object -Property RouteMetric |
-                        Select-Object -First 1
-                    if ($route -and $route.NextHop) {
-                        $status.HasGateway = $true
-                        $status.Gateway = $route.NextHop
-                    }
-                }
-
-                return $status
-            }
-        }
-
         $raw = (ipconfig /all 2>&1) | Out-String
 
-        $ipv4 = @()
-        foreach ($m in [regex]::Matches($raw, '(?im)^\s*IPv4 Address\s*\.\s*\.\s*\.\s*\.\s*\.\s*\.\s*:\s*(?<ip>\d{1,3}(?:\.\d{1,3}){3})')) {
-            $ipText = $m.Groups['ip'].Value
-            if ($ipText -and -not $ipText.StartsWith('169.254.')) {
-                $ipv4 += $ipText
+        $preferredLine = $null
+        foreach ($line in ($raw -split "`r?`n")) {
+            $t = $line.Trim()
+            if (-not $t) { continue }
+
+            if ($t -match '(?i)\(preferred\)') {
+                if ($t -match '(?i)^ipv4\s+address' -or $t -match '(?i)^ip\s+address') {
+                    $preferredLine = $t
+                    break
+                }
             }
         }
 
-        $gwMatch = [regex]::Match($raw, '(?im)^\s*Default Gateway\s*\.\s*\.\s*\.\s*\.\s*\.\s*\.\s*:\s*(?<gw>\d{1,3}(?:\.\d{1,3}){3})')
-        if ($gwMatch.Success -and $gwMatch.Groups['gw'].Value) {
-            $status.HasGateway = $true
-            $status.Gateway = $gwMatch.Groups['gw'].Value
-        }
-
-        if ($ipv4.Count -gt 0) {
-            $status.HasIPv4 = $true
-            $status.IPv4Addresses = $ipv4
+        if ($preferredLine) {
+            $parts = $preferredLine.Split(':', 2)
+            if ($parts.Count -ge 2) {
+                $ipText = $parts[1].Trim()
+                $ipText = ($ipText -replace '(?i)\(preferred\)', '').Trim()
+                if ($ipText -and -not $ipText.StartsWith('169.254.')) {
+                    $status.HasIPv4 = $true
+                    $status.IPv4Addresses = @($ipText)
+                }
+            }
         }
     }
     catch {

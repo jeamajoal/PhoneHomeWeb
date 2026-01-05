@@ -67,10 +67,15 @@ function Initialize-SessionLogging {
 
 function Write-SessionLog {
     param(
-        [Parameter(Mandatory = $true)][string]$Message
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Message = ""
     )
 
     try {
+        if ($null -eq $Message) {
+            $Message = ""
+        }
         if ($Global:SessionLogPath) {
             $Message | Add-Content -Path $Global:SessionLogPath -Encoding UTF8
         }

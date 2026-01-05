@@ -908,25 +908,41 @@ powershell -NoExit -ExecutionPolicy Bypass -File "X:\WinPECollector\Start-Collec
     # Add drivers from server payload (optional)
     Write-Status "Adding additional drivers (hp-network.zip, if present)..." "Cyan"
     try {
-        Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/WinPECollector/download/hp-network.zip" -OutFile "$workDir\hp-network.zip" -Headers $headers
-        if (Test-Path "$workDir\hp-network.zip") {
+        $driverZipPath = "$workDir\hp-network.zip"
+        Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/WinPECollector/download/hp-network.zip" -OutFile $driverZipPath -Headers $headers
+        if (Test-Path $driverZipPath) {
             # Extract drivers
+            Write-Status "Extracting driver package..." "Gray"
             $driverExtractPath = "$workDir\drivers"
             New-Item -ItemType Directory -Path $driverExtractPath -Force | Out-Null
-            Expand-Archive -Path "$workDir\hp-network.zip" -DestinationPath $driverExtractPath -Force
+            try {
+                Expand-Archive -Path $driverZipPath -DestinationPath $driverExtractPath -Force -ErrorAction Stop
+            }
+            catch {
+                throw "Driver package extraction failed: $($_.Exception.Message)"
+            }
             
             # Add drivers to WinPE image
-            $driverFiles = Get-ChildItem -Path $driverExtractPath -Recurse -Include *.inf
-            if ($driverFiles.Count -gt 0) {
-                Write-Status "Found $($driverFiles.Count) driver files, adding to WinPE image..." "Gray"
-                foreach ($driver in $driverFiles) {
-                    Write-Host "  Adding driver: $($driver.FullName)" -ForegroundColor Gray
-                    Add-WindowsDriver -Path $mountDir -Driver $driver.FullName -Recurse -ErrorAction SilentlyContinue | Out-Null
-                }
-                Write-Status "Additional drivers added to WinPE image" "Green"
+            Write-Status "Adding drivers to WinPE image..." "Gray"
+            $driverFiles = Get-ChildItem -Path $driverExtractPath -Recurse -Include *.inf -ErrorAction SilentlyContinue
+            $driverCount = @($driverFiles).Count
+            if ($driverCount -le 0) {
+                Write-Status "No driver files found in the downloaded package" "Gray"
             }
             else {
-                Write-Status "No driver files found in the downloaded package" "Gray"
+                Write-Status "Found $driverCount driver INF files" "Gray"
+
+                # Preferred: let DISM scan the extracted folder once (faster + more reliable than per-INF)
+                try {
+                    Add-WindowsDriver -Path $mountDir -Driver $driverExtractPath -Recurse -ErrorAction Stop | Out-Null
+                    Write-Status "Additional drivers added to WinPE image" "Green"
+                }
+                catch {
+                    Write-Status "Driver injection failed (signed-only attempt): $($_.Exception.Message)" "Yellow"
+                    Write-Status "Retrying driver injection with -ForceUnsigned..." "Yellow"
+                    Add-WindowsDriver -Path $mountDir -Driver $driverExtractPath -Recurse -ForceUnsigned -ErrorAction Stop | Out-Null
+                    Write-Status "Additional drivers added to WinPE image (ForceUnsigned)" "Green"
+                }
             }
         }
         else {

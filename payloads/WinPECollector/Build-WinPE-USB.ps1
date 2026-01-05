@@ -15,10 +15,6 @@
     The disk number of the USB drive to make bootable.
     If not specified, available USB disks will be listed for selection.
 
-.PARAMETER IncludeWiFi
-    Include WiFi drivers and support (larger image). Enabled by default.
-    To disable WiFi support: -IncludeWiFi:$false
-
 .PARAMETER ADKPath
     Path to Windows ADK installation (auto-detected if not specified)
 
@@ -34,9 +30,6 @@
     .\Build-WinPE-USB.ps1 -USBDiskNumber 2
     Uses disk 2 directly.
 
-.EXAMPLE
-    .\Build-WinPE-USB.ps1 -USBDiskNumber 2 -IncludeWiFi
-
 .NOTES
     Author: jeamajoal
     Date: December 17, 2025
@@ -51,8 +44,6 @@
 param(
     [Parameter(Mandatory = $false)]
     [int]$USBDiskNumber = -1,
-    
-    [switch]$IncludeWiFi = $true,
     
     [string]$ADKPath = "",
     
@@ -661,54 +652,6 @@ try {
     }
     
     Write-Status "Added $toolCount diagnostic tools (includes BitLocker/manage-bde, DISM, Recovery tools)" "Green"
-    
-    # Optional WiFi support
-    if (-not $IncludeWiFi) {
-        Write-Status "Skipping WiFi support (use -IncludeWiFi to add it)" "Gray"
-    }
-    else {
-        Write-Status "Adding WiFi and network tools..." "Cyan"
-
-        # WiFi OC naming varies across ADK/WinPE versions. Try common names, then fall back to discovery.
-        $wifiCandidateNames = @(
-            "WinPE-WiFi-Package.cab",
-            "WinPE-WiFi.cab"
-        )
-
-        $wifiCabPaths = @()
-        foreach ($name in $wifiCandidateNames) {
-            $p = Join-Path $packagesPath $name
-            if (Test-Path $p) { $wifiCabPaths += $p }
-        }
-
-        if ($wifiCabPaths.Count -eq 0) {
-            $discovered = @(Get-ChildItem -Path $packagesPath -Filter "WinPE-WiFi*.cab" -File -ErrorAction SilentlyContinue)
-            if ($discovered.Count -gt 0) {
-                $wifiCabPaths = $discovered | ForEach-Object { $_.FullName }
-            }
-        }
-
-        $wifiCount = 0
-        foreach ($cabPath in $wifiCabPaths | Select-Object -Unique) {
-            $cabName = Split-Path -Leaf $cabPath
-            Write-Host "  Adding: $cabName" -ForegroundColor Gray
-            Add-WindowsPackage -Path $mountDir -PackagePath $cabPath -IgnoreCheck -ErrorAction SilentlyContinue | Out-Null
-            $wifiCount++
-        }
-
-        if ($wifiCount -gt 0) {
-            Write-Status "WiFi and network support added" "Green"
-        }
-        else {
-            Write-Status "WiFi packages not found under: $packagesPath (wired only)" "Yellow"
-            try {
-                $nearMatches = @(Get-ChildItem -Path $packagesPath -Filter "*WiFi*.cab" -File -ErrorAction SilentlyContinue | Select-Object -First 10 -ExpandProperty Name)
-                if ($nearMatches.Count -gt 0) {
-                    Write-Status ("WiFi-related CABs present (first 10): " + ($nearMatches -join ", ")) "Gray"
-                }
-            } catch {}
-        }
-    }
     
     # Stage collector script
     $collectorDir = "$mountDir\WinPECollector"

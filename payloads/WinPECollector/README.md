@@ -39,7 +39,6 @@ Run in an elevated PowerShell prompt:
 
 - `./Build-WinPE-USB.ps1` (interactive disk selection)
 - `./Build-WinPE-USB.ps1 -USBDiskNumber 2` (explicit disk number)
-- `./Build-WinPE-USB.ps1 -USBDiskNumber 2 -IncludeWiFi` (adds WinPE WiFi optional component)
 
 Skip the installer step:
 

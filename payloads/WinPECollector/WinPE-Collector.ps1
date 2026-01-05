@@ -266,132 +266,6 @@ function Test-ServerPort {
     }
 }
 
-function Invoke-WiFiSetupInteractive {
-    # Best-effort WiFi helper for WinPE when WinPE-WiFi-Package is present.
-    if (-not (Get-Command netsh -ErrorAction SilentlyContinue)) {
-        Write-LogMessage "WiFi configuration is not available (netsh not found)." "Yellow"
-        return $false
-    }
-
-    Write-Host "" 
-    Write-LogMessage "WiFi setup (best-effort)" "Cyan"
-
-    try {
-        # Show visible networks (may fail if WiFi components aren't present)
-        Write-Host "Available WiFi networks:" -ForegroundColor Cyan
-        & netsh wlan show networks mode=bssid 2>&1 | ForEach-Object { Write-Host $_ }
-    }
-    catch {
-        Write-LogMessage "Could not enumerate WiFi networks." "Yellow"
-    }
-
-    $ssid = Read-Host "Enter WiFi SSID (or blank to cancel)"
-    if ([string]::IsNullOrWhiteSpace($ssid)) {
-        return $false
-    }
-
-    $secure = Read-Host "Enter WiFi password (leave blank for open network)" -AsSecureString
-    $pwd = $null
-    if ($secure -and $secure.Length -gt 0) {
-        try {
-            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-            $pwd = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-        }
-        finally {
-            if ($bstr -and $bstr -ne [IntPtr]::Zero) {
-                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-            }
-        }
-    }
-
-    $tmp = $null
-    try {
-        $tmp = Join-Path $env:TEMP ("wifi-" + [Guid]::NewGuid().ToString() + ".xml")
-
-        $auth = if ($pwd) { 'WPA2PSK' } else { 'open' }
-        $encryption = if ($pwd) { 'AES' } else { 'none' }
-
-        if ($pwd) {
-            $profile = @"
-<?xml version=\"1.0\"?>
-<WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">
-  <name>$ssid</name>
-  <SSIDConfig>
-    <SSID>
-      <name>$ssid</name>
-    </SSID>
-  </SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>auto</connectionMode>
-  <MSM>
-    <security>
-      <authEncryption>
-        <authentication>$auth</authentication>
-        <encryption>$encryption</encryption>
-        <useOneX>false</useOneX>
-      </authEncryption>
-      <sharedKey>
-        <keyType>passPhrase</keyType>
-        <protected>false</protected>
-        <keyMaterial>$pwd</keyMaterial>
-      </sharedKey>
-    </security>
-  </MSM>
-</WLANProfile>
-"@
-        }
-        else {
-            $profile = @"
-<?xml version=\"1.0\"?>
-<WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">
-  <name>$ssid</name>
-  <SSIDConfig>
-    <SSID>
-      <name>$ssid</name>
-    </SSID>
-  </SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>manual</connectionMode>
-  <MSM>
-    <security>
-      <authEncryption>
-        <authentication>$auth</authentication>
-        <encryption>$encryption</encryption>
-        <useOneX>false</useOneX>
-      </authEncryption>
-    </security>
-  </MSM>
-</WLANProfile>
-"@
-        }
-
-        $profile | Out-File -FilePath $tmp -Force -Encoding ASCII
-
-        # Add profile and connect
-        & netsh wlan add profile filename="$tmp" user=all 2>&1 | ForEach-Object { Write-Host $_ }
-        & netsh wlan connect name="$ssid" 2>&1 | ForEach-Object { Write-Host $_ }
-
-        Write-LogMessage "Waiting for network (DHCP)..." "Gray"
-        if (Wait-ForNetwork -TimeoutSeconds 30 -PollSeconds 2) {
-            $st = Get-NetworkStatus
-            Write-LogMessage "Network detected: $($st.IPv4Addresses -join ', ')" "Green"
-            return $true
-        }
-
-        Write-LogMessage "Still no IP address after WiFi setup." "Yellow"
-        return $false
-    }
-    catch {
-        Write-LogMessage "WiFi setup failed: $($_.Exception.Message)" "Yellow"
-        return $false
-    }
-    finally {
-        if ($tmp -and (Test-Path $tmp)) {
-            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
 function Ensure-NetworkOrContinue {
     param(
         [Parameter(Mandatory = $true)][string]$UploadUrl
@@ -415,18 +289,13 @@ function Ensure-NetworkOrContinue {
     Write-Host "" 
     Write-Host "Options:" -ForegroundColor Cyan
     Write-Host "  [1] Continue (collect now, save ZIP for later)" -ForegroundColor Gray
-    Write-Host "  [2] Configure WiFi" -ForegroundColor Gray
-    Write-Host "  [3] Retry network check" -ForegroundColor Gray
+    Write-Host "  [2] Retry network check" -ForegroundColor Gray
 
     while ($true) {
-        $choice = Read-Host "Select 1-3"
+        $choice = Read-Host "Select 1-2"
         switch ($choice) {
             '1' { return }
             '2' {
-                [void](Invoke-WiFiSetupInteractive)
-                return
-            }
-            '3' {
                 Write-LogMessage "Retrying network check..." "Cyan"
                 if (Wait-ForNetwork -TimeoutSeconds 20 -PollSeconds 2) {
                     $st = Get-NetworkStatus
@@ -1647,7 +1516,7 @@ function Main {
     # Capture early environment snapshot for troubleshooting (network + storage + drivers)
     Save-SessionEnvironmentSnapshot -WorkingRoot $workingRoot
 
-    # Pre-flight: if network isn't ready, give the user a chance to set up WiFi (WinPE only)
+    # Pre-flight: if network isn't ready, let the user decide whether to continue.
     if ($isWinPE) {
         Ensure-NetworkOrContinue -UploadUrl $UploadUrl
     }
@@ -1904,28 +1773,6 @@ function Main {
         Write-Host ""
         Write-LogMessage "Upload not available or failed. The package has been saved locally to:" "Yellow"
         Write-LogMessage "  $zipPath" "Yellow"
-
-        # Give a last-chance WiFi setup + retry in WinPE
-        if ($isWinPE) {
-            Write-Host "" 
-            $doWifi = Read-Host "Configure WiFi and retry upload now? (y/n)"
-            if ($doWifi -eq 'y') {
-                if (Invoke-WiFiSetupInteractive) {
-                    Write-LogMessage "Retrying upload..." "Cyan"
-                    $retryUploaded = Send-DiagnosticsPackage -ZipPath $zipPath -UploadUrl $UploadUrl -AuthKey $AuthKey
-                    if ($retryUploaded) {
-                        Write-LogMessage "Upload successful after WiFi setup!" "Green"
-                        if ($isWinPE) {
-                            Write-LogMessage "You can now safely remove the WinPE media and restart the system." "Yellow"
-                        }
-                        Write-Host ""
-                        Write-Host $Divider -ForegroundColor Cyan
-                        Read-Host "Press Enter to exit"
-                        return
-                    }
-                }
-            }
-        }
 
         if (-not $collectionSucceeded) {
             Write-LogMessage "Collection had errors; include the ZIP + session log for troubleshooting." "Yellow"

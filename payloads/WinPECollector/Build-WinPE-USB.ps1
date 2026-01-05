@@ -668,26 +668,45 @@ try {
     }
     else {
         Write-Status "Adding WiFi and network tools..." "Cyan"
-    
-        $wifiPackages = @(
-            "WinPE-WiFi-Package.cab"
+
+        # WiFi OC naming varies across ADK/WinPE versions. Try common names, then fall back to discovery.
+        $wifiCandidateNames = @(
+            "WinPE-WiFi-Package.cab",
+            "WinPE-WiFi.cab"
         )
 
-        $wifiCount = 0
-        foreach ($pkg in $wifiPackages) {
-            $pkgPath = Join-Path $packagesPath $pkg
-            if (Test-Path $pkgPath) {
-                Write-Host "  Adding: $pkg" -ForegroundColor Gray
-                Add-WindowsPackage -Path $mountDir -PackagePath $pkgPath -IgnoreCheck -ErrorAction SilentlyContinue | Out-Null
-                $wifiCount++
+        $wifiCabPaths = @()
+        foreach ($name in $wifiCandidateNames) {
+            $p = Join-Path $packagesPath $name
+            if (Test-Path $p) { $wifiCabPaths += $p }
+        }
+
+        if ($wifiCabPaths.Count -eq 0) {
+            $discovered = @(Get-ChildItem -Path $packagesPath -Filter "WinPE-WiFi*.cab" -File -ErrorAction SilentlyContinue)
+            if ($discovered.Count -gt 0) {
+                $wifiCabPaths = $discovered | ForEach-Object { $_.FullName }
             }
+        }
+
+        $wifiCount = 0
+        foreach ($cabPath in $wifiCabPaths | Select-Object -Unique) {
+            $cabName = Split-Path -Leaf $cabPath
+            Write-Host "  Adding: $cabName" -ForegroundColor Gray
+            Add-WindowsPackage -Path $mountDir -PackagePath $cabPath -IgnoreCheck -ErrorAction SilentlyContinue | Out-Null
+            $wifiCount++
         }
 
         if ($wifiCount -gt 0) {
             Write-Status "WiFi and network support added" "Green"
         }
         else {
-            Write-Status "WiFi packages not found (wired only)" "Yellow"
+            Write-Status "WiFi packages not found under: $packagesPath (wired only)" "Yellow"
+            try {
+                $nearMatches = @(Get-ChildItem -Path $packagesPath -Filter "*WiFi*.cab" -File -ErrorAction SilentlyContinue | Select-Object -First 10 -ExpandProperty Name)
+                if ($nearMatches.Count -gt 0) {
+                    Write-Status ("WiFi-related CABs present (first 10): " + ($nearMatches -join ", ")) "Gray"
+                }
+            } catch {}
         }
     }
     

@@ -178,15 +178,39 @@ function Get-NetworkStatus {
         IPv4Addresses = @()
         HasGateway    = $false
         Gateway       = $null
+        intIndex      = $null
     }
 
     try {
+        if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
+            $ip = Get-NetIPAddress -PrefixOrigin DHCP -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -and -not $_.IPAddress.StartsWith('169.254.') } | Select-Object -First 1
+            if ($ip -and $ip.IPAddress) {
+                $status.HasIPv4 = $true
+                $status.IPv4Addresses = @($ip.IPAddress)
+                $status.intIndex = $ip.InterfaceIndex
+
+                if ($status.intIndex -and (Get-Command Get-NetRoute -ErrorAction SilentlyContinue)) {
+                    $route = Get-NetRoute -AddressFamily IPv4 -InterfaceIndex $status.intIndex -ErrorAction Stop |
+                        Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+                        Sort-Object -Property RouteMetric |
+                        Select-Object -First 1
+                    if ($route -and $route.NextHop) {
+                        $status.HasGateway = $true
+                        $status.Gateway = $route.NextHop
+                    }
+                }
+
+                return $status
+            }
+        }
+
         $raw = (ipconfig /all 2>&1) | Out-String
+
         $ipv4 = @()
         foreach ($m in [regex]::Matches($raw, '(?im)^\s*IPv4 Address\s*\.\s*\.\s*\.\s*\.\s*\.\s*\.\s*:\s*(?<ip>\d{1,3}(?:\.\d{1,3}){3})')) {
-            $ip = $m.Groups['ip'].Value
-            if ($ip -and -not $ip.StartsWith('169.254.')) {
-                $ipv4 += $ip
+            $ipText = $m.Groups['ip'].Value
+            if ($ipText -and -not $ipText.StartsWith('169.254.')) {
+                $ipv4 += $ipText
             }
         }
 

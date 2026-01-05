@@ -171,6 +171,271 @@ function Save-SessionEnvironmentSnapshot {
     }
 }
 
+function Get-NetworkStatus {
+    # WinPE-safe network detection: parse ipconfig output.
+    $status = [PSCustomObject]@{
+        HasIPv4       = $false
+        IPv4Addresses = @()
+        HasGateway    = $false
+        Gateway       = $null
+    }
+
+    try {
+        $raw = (ipconfig /all 2>&1) | Out-String
+        $ipv4 = @()
+        foreach ($m in [regex]::Matches($raw, '(?im)^\s*IPv4 Address\s*\.\s*\.\s*\.\s*\.\s*\.\s*\.\s*:\s*(?<ip>\d{1,3}(?:\.\d{1,3}){3})')) {
+            $ip = $m.Groups['ip'].Value
+            if ($ip -and -not $ip.StartsWith('169.254.')) {
+                $ipv4 += $ip
+            }
+        }
+
+        $gwMatch = [regex]::Match($raw, '(?im)^\s*Default Gateway\s*\.\s*\.\s*\.\s*\.\s*\.\s*\.\s*:\s*(?<gw>\d{1,3}(?:\.\d{1,3}){3})')
+        if ($gwMatch.Success -and $gwMatch.Groups['gw'].Value) {
+            $status.HasGateway = $true
+            $status.Gateway = $gwMatch.Groups['gw'].Value
+        }
+
+        if ($ipv4.Count -gt 0) {
+            $status.HasIPv4 = $true
+            $status.IPv4Addresses = $ipv4
+        }
+    }
+    catch {
+        # ignore
+    }
+
+    return $status
+}
+
+function Wait-ForNetwork {
+    param(
+        [int]$TimeoutSeconds = 20,
+        [int]$PollSeconds = 2
+    )
+
+    $stopAt = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $stopAt) {
+        $st = Get-NetworkStatus
+        if ($st.HasIPv4) {
+            return $true
+        }
+        Start-Sleep -Seconds $PollSeconds
+    }
+    return $false
+}
+
+function Test-ServerPort {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [int]$TimeoutMs = 2500
+    )
+
+    try {
+        $uri = [Uri]$Url
+        $hostName = $uri.Host
+        $port = if ($uri.IsDefaultPort) {
+            if ($uri.Scheme -eq 'https') { 443 } elseif ($uri.Scheme -eq 'http') { 80 } else { $uri.Port }
+        } else {
+            $uri.Port
+        }
+
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $iar = $client.BeginConnect($hostName, $port, $null, $null)
+            if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+                return $false
+            }
+            $client.EndConnect($iar)
+            return $true
+        }
+        finally {
+            $client.Close()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-WiFiSetupInteractive {
+    # Best-effort WiFi helper for WinPE when WinPE-WiFi-Package is present.
+    if (-not (Get-Command netsh -ErrorAction SilentlyContinue)) {
+        Write-LogMessage "WiFi configuration is not available (netsh not found)." "Yellow"
+        return $false
+    }
+
+    Write-Host "" 
+    Write-LogMessage "WiFi setup (best-effort)" "Cyan"
+
+    try {
+        # Show visible networks (may fail if WiFi components aren't present)
+        Write-Host "Available WiFi networks:" -ForegroundColor Cyan
+        & netsh wlan show networks mode=bssid 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+    catch {
+        Write-LogMessage "Could not enumerate WiFi networks." "Yellow"
+    }
+
+    $ssid = Read-Host "Enter WiFi SSID (or blank to cancel)"
+    if ([string]::IsNullOrWhiteSpace($ssid)) {
+        return $false
+    }
+
+    $secure = Read-Host "Enter WiFi password (leave blank for open network)" -AsSecureString
+    $pwd = $null
+    if ($secure -and $secure.Length -gt 0) {
+        try {
+            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+            $pwd = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        }
+        finally {
+            if ($bstr -and $bstr -ne [IntPtr]::Zero) {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
+        }
+    }
+
+    $tmp = $null
+    try {
+        $tmp = Join-Path $env:TEMP ("wifi-" + [Guid]::NewGuid().ToString() + ".xml")
+
+        $auth = if ($pwd) { 'WPA2PSK' } else { 'open' }
+        $encryption = if ($pwd) { 'AES' } else { 'none' }
+
+        if ($pwd) {
+            $profile = @"
+<?xml version=\"1.0\"?>
+<WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">
+  <name>$ssid</name>
+  <SSIDConfig>
+    <SSID>
+      <name>$ssid</name>
+    </SSID>
+  </SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM>
+    <security>
+      <authEncryption>
+        <authentication>$auth</authentication>
+        <encryption>$encryption</encryption>
+        <useOneX>false</useOneX>
+      </authEncryption>
+      <sharedKey>
+        <keyType>passPhrase</keyType>
+        <protected>false</protected>
+        <keyMaterial>$pwd</keyMaterial>
+      </sharedKey>
+    </security>
+  </MSM>
+</WLANProfile>
+"@
+        }
+        else {
+            $profile = @"
+<?xml version=\"1.0\"?>
+<WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">
+  <name>$ssid</name>
+  <SSIDConfig>
+    <SSID>
+      <name>$ssid</name>
+    </SSID>
+  </SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>manual</connectionMode>
+  <MSM>
+    <security>
+      <authEncryption>
+        <authentication>$auth</authentication>
+        <encryption>$encryption</encryption>
+        <useOneX>false</useOneX>
+      </authEncryption>
+    </security>
+  </MSM>
+</WLANProfile>
+"@
+        }
+
+        $profile | Out-File -FilePath $tmp -Force -Encoding ASCII
+
+        # Add profile and connect
+        & netsh wlan add profile filename="$tmp" user=all 2>&1 | ForEach-Object { Write-Host $_ }
+        & netsh wlan connect name="$ssid" 2>&1 | ForEach-Object { Write-Host $_ }
+
+        Write-LogMessage "Waiting for network (DHCP)..." "Gray"
+        if (Wait-ForNetwork -TimeoutSeconds 30 -PollSeconds 2) {
+            $st = Get-NetworkStatus
+            Write-LogMessage "Network detected: $($st.IPv4Addresses -join ', ')" "Green"
+            return $true
+        }
+
+        Write-LogMessage "Still no IP address after WiFi setup." "Yellow"
+        return $false
+    }
+    catch {
+        Write-LogMessage "WiFi setup failed: $($_.Exception.Message)" "Yellow"
+        return $false
+    }
+    finally {
+        if ($tmp -and (Test-Path $tmp)) {
+            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Ensure-NetworkOrContinue {
+    param(
+        [Parameter(Mandatory = $true)][string]$UploadUrl
+    )
+
+    Write-Section "Network"
+    Write-LogMessage "Waiting briefly for network..." "Cyan"
+    $hasNet = Wait-ForNetwork -TimeoutSeconds 20 -PollSeconds 2
+    if ($hasNet) {
+        $st = Get-NetworkStatus
+        Write-LogMessage "Network detected: $($st.IPv4Addresses -join ', ')" "Green"
+
+        # Best-effort server reachability check (does not require ICMP)
+        if (-not (Test-ServerPort -Url $UploadUrl -TimeoutMs 2500)) {
+            Write-LogMessage "Network is up, but server is not reachable yet." "Yellow"
+        }
+        return
+    }
+
+    Write-LogMessage "No IP address detected. Upload may not be possible yet." "Yellow"
+    Write-Host "" 
+    Write-Host "Options:" -ForegroundColor Cyan
+    Write-Host "  [1] Continue (collect now, save ZIP for later)" -ForegroundColor Gray
+    Write-Host "  [2] Configure WiFi" -ForegroundColor Gray
+    Write-Host "  [3] Retry network check" -ForegroundColor Gray
+
+    while ($true) {
+        $choice = Read-Host "Select 1-3"
+        switch ($choice) {
+            '1' { return }
+            '2' {
+                [void](Invoke-WiFiSetupInteractive)
+                return
+            }
+            '3' {
+                Write-LogMessage "Retrying network check..." "Cyan"
+                if (Wait-ForNetwork -TimeoutSeconds 20 -PollSeconds 2) {
+                    $st = Get-NetworkStatus
+                    Write-LogMessage "Network detected: $($st.IPv4Addresses -join ', ')" "Green"
+                }
+                else {
+                    Write-LogMessage "Still no IP address detected." "Yellow"
+                }
+                return
+            }
+            default {
+                Write-Host "Invalid selection." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
 # Banner
 function Show-Banner {
     Clear-Host
@@ -1373,6 +1638,11 @@ function Main {
 
     # Capture early environment snapshot for troubleshooting (network + storage + drivers)
     Save-SessionEnvironmentSnapshot -WorkingRoot $workingRoot
+
+    # Pre-flight: if network isn't ready, give the user a chance to set up WiFi (WinPE only)
+    if ($isWinPE) {
+        Ensure-NetworkOrContinue -UploadUrl $UploadUrl
+    }
     
     # Initialize error log for failure reporting
     $errorLogPath = Join-Path $workingRoot "WinPE-Collector-Error.log"
@@ -1626,6 +1896,29 @@ function Main {
         Write-Host ""
         Write-LogMessage "Upload not available or failed. The package has been saved locally to:" "Yellow"
         Write-LogMessage "  $zipPath" "Yellow"
+
+        # Give a last-chance WiFi setup + retry in WinPE
+        if ($isWinPE) {
+            Write-Host "" 
+            $doWifi = Read-Host "Configure WiFi and retry upload now? (y/n)"
+            if ($doWifi -eq 'y') {
+                if (Invoke-WiFiSetupInteractive) {
+                    Write-LogMessage "Retrying upload..." "Cyan"
+                    $retryUploaded = Send-DiagnosticsPackage -ZipPath $zipPath -UploadUrl $UploadUrl -AuthKey $AuthKey
+                    if ($retryUploaded) {
+                        Write-LogMessage "Upload successful after WiFi setup!" "Green"
+                        if ($isWinPE) {
+                            Write-LogMessage "You can now safely remove the WinPE media and restart the system." "Yellow"
+                        }
+                        Write-Host ""
+                        Write-Host $Divider -ForegroundColor Cyan
+                        Read-Host "Press Enter to exit"
+                        return
+                    }
+                }
+            }
+        }
+
         if (-not $collectionSucceeded) {
             Write-LogMessage "Collection had errors; include the ZIP + session log for troubleshooting." "Yellow"
         }

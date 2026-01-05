@@ -15,6 +15,9 @@ request_logs.txt
 # Allow shipping specific payload zips
 !payloads/WinPECollector/*.zip
 
+# Private/local-only WinPE Collector customization (do not commit)
+payloads/WinPECollector/WinPE-Collector.custom.json
+
 # Payloads we intentionally do not ship
 payloads/IntuneDiagnostics/
 

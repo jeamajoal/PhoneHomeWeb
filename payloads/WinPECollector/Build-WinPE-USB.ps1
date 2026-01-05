@@ -672,6 +672,16 @@ try {
             Copy-Item -Path $localCustomConfig -Destination "$collectorDir\WinPE-Collector.custom.json" -Force
             Write-Status "Custom collector config embedded (WinPE-Collector.custom.json)" "Green"
         }
+        else {
+            # Optional: if no local custom config exists, try to pull one from the server.
+            try {
+                Invoke-WebRequestCompat -Uri "$ServerUrl/payloads/WinPECollector/download/WinPE-Collector.custom.json" -OutFile "$collectorDir\WinPE-Collector.custom.json" -Headers $headers
+                Write-Status "Custom collector config downloaded (WinPE-Collector.custom.json)" "Green"
+            }
+            catch {
+                Write-Status "No custom collector config found locally or on server (optional)" "Gray"
+            }
+        }
         Write-Status "Collector script embedded" "Green"
     }
     else {

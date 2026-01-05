@@ -662,7 +662,10 @@ function Get-CollectorCustomConfig {
                 continue
             }
 
-            $cfg = $raw | ConvertFrom-Json -ErrorAction Stop
+            # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
+            $rawNorm = $raw -replace "\u0000", ""
+            $rawNorm = $rawNorm.Trim([char]0xFEFF)
+            $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
             if ($null -eq $cfg) {
                 continue
             }
@@ -671,7 +674,52 @@ function Get-CollectorCustomConfig {
             return $cfg
         }
         catch {
-            Write-LogMessage "  Custom config found but could not be read/parsed ($root\\$fileName): $($_.Exception.Message)" "Yellow"
+            # If ConvertFrom-Json fails, try a few alternate decodes from bytes to handle odd encodings / missing BOM.
+            try {
+                $bytes = [System.IO.File]::ReadAllBytes($candidate)
+                $decoders = @(
+                    [System.Text.Encoding]::UTF8,
+                    [System.Text.Encoding]::Unicode,
+                    [System.Text.Encoding]::BigEndianUnicode
+                )
+
+                foreach ($enc in $decoders) {
+                    try {
+                        $text = $enc.GetString($bytes)
+                        $text = ($text -replace "\u0000", "").Trim([char]0xFEFF)
+                        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+                        $probe = $text.TrimStart()
+                        if ($probe.StartsWith('<')) {
+                            # Likely HTML from a 401/403/404 page saved as .json
+                            continue
+                        }
+
+                        $cfg2 = $text | ConvertFrom-Json -ErrorAction Stop
+                        if ($null -ne $cfg2) {
+                            Write-LogMessage "  Loaded custom config: $candidate" "Gray" -LogOnly
+                            return $cfg2
+                        }
+                    }
+                    catch {
+                        # try next decoder
+                    }
+                }
+            }
+            catch {
+                # ignore fallback read errors
+            }
+
+            $hint = ""
+            try {
+                $first = (Get-Content -Path $candidate -TotalCount 1 -ErrorAction SilentlyContinue)
+                if ($first -and ($first.TrimStart().StartsWith('<'))) {
+                    $hint = " (file looks like HTML; check server auth/404 and that the download actually returned JSON)"
+                }
+            }
+            catch {}
+
+            Write-LogMessage "  Custom config found but could not be read/parsed ($candidate): $($_.Exception.Message)$hint" "Yellow"
         }
     }
 

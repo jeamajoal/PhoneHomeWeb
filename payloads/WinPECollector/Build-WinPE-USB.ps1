@@ -16,7 +16,8 @@
     If not specified, available USB disks will be listed for selection.
 
 .PARAMETER IncludeWiFi
-    Include WiFi drivers and support (larger image)
+    Include WiFi drivers and support (larger image). Enabled by default.
+    To disable WiFi support: -IncludeWiFi:$false
 
 .PARAMETER ADKPath
     Path to Windows ADK installation (auto-detected if not specified)
@@ -51,7 +52,7 @@ param(
     [Parameter(Mandatory = $false)]
     [int]$USBDiskNumber = -1,
     
-    [switch]$IncludeWiFi,
+    [switch]$IncludeWiFi = $true,
     
     [string]$ADKPath = "",
     

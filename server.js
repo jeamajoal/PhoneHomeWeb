@@ -1027,6 +1027,29 @@ app.get("/payloads/:folder/download/:filename", (req, res) => {
         }
 
         if (fs.existsSync(filePath)) {
+          const ext = path.extname(filename).toLowerCase();
+          const textExts = new Set([
+            ".ps1",
+            ".psm1",
+            ".psd1",
+            ".json",
+            ".txt",
+            ".md",
+            ".cmd",
+            ".bat",
+            ".sh",
+          ]);
+
+          // IMPORTANT: Never run placeholder replacement on binary files (e.g., .zip)
+          // because reading as UTF-8 and rewriting will corrupt the file.
+          if (!textExts.has(ext)) {
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${path.basename(filename)}"`
+            );
+            return res.sendFile(resolvedPath);
+          }
+
           let content = getFileWithParamOverwrite(
             req,
             res,

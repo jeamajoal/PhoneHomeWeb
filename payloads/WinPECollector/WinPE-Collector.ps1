@@ -352,6 +352,23 @@ function Get-ThumbDriveRoot {
 }
 
 function Test-VolumeNeedsRepair {
+    <#
+    .SYNOPSIS
+        Validates if a volume object indicates filesystem health issues that may require repair.
+    .DESCRIPTION
+        Examines a volume object for various indicators of filesystem corruption or health problems.
+        Primary checks include HealthStatus (Warning/Unhealthy) and OperationalStatus (repair needed/failed).
+        Secondary checks detect volumes with Unknown filesystem types and zero sizes, which often
+        indicate a drive letter exists but the filesystem isn't mountable or readable.
+    .PARAMETER Volume
+        The volume object to test (typically from Get-Volume or Get-Partition cmdlets).
+    .OUTPUTS
+        System.Boolean
+        Returns $true if the volume shows signs of needing repair, $false otherwise.
+    .NOTES
+        This function is designed for use in WinPE environments where filesystem health signals
+        may differ from full Windows installations.
+    #>
     param(
         [Parameter(Mandatory = $true)]$Volume
     )

@@ -163,8 +163,17 @@ function Redact-BitLockerKey {
     $textStr = if ($Text -is [array]) {
         $Text -join "`n"
     }
+    elseif ($Text -is [string]) {
+        $Text
+    }
     else {
-        $Text.ToString()
+        try {
+            $Text.ToString()
+        }
+        catch {
+            # If ToString() fails, return empty string
+            return ""
+        }
     }
     
     # Pattern 1: 48 digits with dashes (e.g., 123456-789012-345678-901234-567890-123456-789012-345678)
@@ -175,9 +184,10 @@ function Redact-BitLockerKey {
     # This catches unformatted keys
     $textStr = $textStr -replace '\b\d{48}\b', '[REDACTED]'
     
-    # Pattern 3: Partial patterns that might appear in command lines or error messages
-    # Look for sequences that have at least 3 groups of 6 digits with dashes
-    $textStr = $textStr -replace '(?:\d{6}-){2,}\d{6}(?:-\d{6})*', '[REDACTED]'
+    # Pattern 3: Partial patterns that might appear in command lines (e.g., in -RecoveryPassword argument)
+    # Only match if we have at least 5 groups (30 digits) to reduce false positives
+    # BitLocker keys are 8 groups of 6 digits, so partial exposure of 5+ groups is still sensitive
+    $textStr = $textStr -replace '(?:\d{6}-){4,}\d{6}(?:-\d{6})*', '[REDACTED]'
     
     return $textStr
 }

@@ -1468,12 +1468,8 @@ function Get-CollectorCustomConfig {
                 continue
             }
 
-            # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
-            $rawNorm = $raw -replace "\u0000", ""
-            $rawNorm = Remove-BomCharacters -Text $rawNorm
-            
             # Parse JSON (Note: PowerShell Core 7.x supports // comments, but Windows PowerShell 5.1 does not)
-            $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
+            $cfg = $raw | ConvertFrom-Json -ErrorAction Stop
             
             if ($null -eq $cfg) {
                 Write-LogMessage "  Custom config parsed as null: $candidate" "Yellow"

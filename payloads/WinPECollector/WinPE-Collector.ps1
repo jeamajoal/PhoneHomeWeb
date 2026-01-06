@@ -156,6 +156,26 @@ function Invoke-ExternalCommandText {
     }
 }
 
+# Collects and logs comprehensive drive health and diagnostic information for a specified drive.
+# This function gathers multiple diagnostic data points including volume properties, partition details,
+# BitLocker status, filesystem information, and disk integrity checks to help troubleshoot drive issues.
+#
+# Parameters:
+#   DriveLetter - Single letter (A-Z) identifying the target drive. Required.
+#   Context - Optional descriptive label added to the log section title (e.g., "After BitLocker unlock",
+#             "Before repair attempt"). Helps correlate diagnostics with workflow stages when the same
+#             drive is diagnosed multiple times during a session.
+#
+# Information logged includes:
+#   - Get-Volume output (size, filesystem, health status, operational status)
+#   - Get-Partition output (disk number, partition type, offset, access paths)
+#   - manage-bde -status (BitLocker encryption status, protection methods)
+#   - manage-bde -protectors -get (key protector details)
+#   - Get-BitLockerVolume cmdlet output (if available)
+#   - mountvol volume GUID path
+#   - fsutil fsinfo volumeinfo (filesystem details, serial number)
+#   - fsutil dirty query (dirty bit status)
+#   - chkdsk read-only scan (filesystem errors without modification)
 function Write-DriveHealthDiagnosticsToSessionLog {
     param(
         [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z]$')][string]$DriveLetter,

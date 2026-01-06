@@ -667,7 +667,7 @@ function Get-CollectorCustomConfig {
             $rawNorm = $raw -replace "\u0000", ""
             $rawNorm = $rawNorm.Trim([char]0xFEFF)
             
-            # Parse JSON (PowerShell's ConvertFrom-Json supports // comments natively)
+            # Parse JSON (Note: PowerShell Core 7.x supports // comments, but Windows PowerShell 5.1 does not)
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
             
             if ($null -eq $cfg) {

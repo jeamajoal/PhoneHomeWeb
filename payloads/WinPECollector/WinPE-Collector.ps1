@@ -1428,7 +1428,13 @@ function Get-CollectorCustomConfig {
 
             # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
             $rawNorm = $raw -replace "\u0000", ""
-            $rawNorm = $rawNorm.Trim([char]0xFEFF)
+            # Remove BOM (U+FEFF) from start and end - use [char] for cross-version compatibility
+            while ($rawNorm.Length -gt 0 -and $rawNorm[0] -eq [char]0xFEFF) {
+                $rawNorm = $rawNorm.Substring(1)
+            }
+            while ($rawNorm.Length -gt 0 -and $rawNorm[$rawNorm.Length - 1] -eq [char]0xFEFF) {
+                $rawNorm = $rawNorm.Substring(0, $rawNorm.Length - 1)
+            }
             
             # Parse JSON (Note: PowerShell Core 7.x supports // comments, but Windows PowerShell 5.1 does not)
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
@@ -1471,7 +1477,14 @@ function Get-CollectorCustomConfig {
                 foreach ($enc in $decoders) {
                     try {
                         $text = $enc.GetString($bytes)
-                        $text = ($text -replace "\u0000", "").Trim([char]0xFEFF)
+                        $text = $text -replace "\u0000", ""
+                        # Remove BOM consistently
+                        while ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+                            $text = $text.Substring(1)
+                        }
+                        while ($text.Length -gt 0 -and $text[$text.Length - 1] -eq [char]0xFEFF) {
+                            $text = $text.Substring(0, $text.Length - 1)
+                        }
                         if ([string]::IsNullOrWhiteSpace($text)) { continue }
 
                         $probe = $text.TrimStart()
@@ -1505,10 +1518,16 @@ function Get-CollectorCustomConfig {
                 elseif ($first -and -not ($first.TrimStart().StartsWith('{'))) {
                     $hint = " (file does not start with '{'; ensure it is valid JSON)"
                 }
+                else {
+                    # Provide more context about the error
+                    $hint = " (JSON syntax error or encoding issue)"
+                }
             }
             catch {}
 
             Write-LogMessage "  Custom config found but could not be read/parsed ($candidate): $($_.Exception.Message)$hint" "Yellow"
+            Write-LogMessage "    Exception type: $($_.Exception.GetType().FullName)" "Gray" -LogOnly
+            Write-LogMessage "    Try validating the JSON with: Get-Content -Path '$candidate' -Raw | ConvertFrom-Json" "Gray" -LogOnly
         }
     }
 

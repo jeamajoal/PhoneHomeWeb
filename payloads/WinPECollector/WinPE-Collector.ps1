@@ -327,8 +327,12 @@ function Get-ThumbDriveRoot {
     .SYNOPSIS
         Best-effort detection of a removable USB thumb drive root in WinPE.
     .DESCRIPTION
-        Returns a root path like "E:\" if a removable volume is found.
+        Returns a root path like "E:\" if a suitable removable volume is found.
         If multiple removable volumes exist, prefers one containing BL_Keys.txt.
+        Returns $null if no suitable thumb drive is detected or if an error occurs.
+    .OUTPUTS
+        System.String
+            A drive root path such as "E:\" when a thumb drive is detected, or $null when no candidate is found.
     #>
     try {
         $expectedLabel = 'WINPE_DIAG'

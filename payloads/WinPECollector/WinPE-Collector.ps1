@@ -1295,7 +1295,7 @@ function Unlock-BitLockerDrive {
                 
                 foreach ($key in $keyList) {
                     $cleanKey = $key -replace '\s', '' -replace '-', ''
-                    if ($cleanKey.Length -eq 48) {
+                    if ($cleanKey.Length -eq 48 -and $cleanKey -match '^\d{48}$') {
                         $formattedKey = $cleanKey -replace '(.{6})', '$1-'
                         $formattedKey = $formattedKey.TrimEnd('-')
                         

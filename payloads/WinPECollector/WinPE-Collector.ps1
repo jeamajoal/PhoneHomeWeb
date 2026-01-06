@@ -667,27 +667,9 @@ function Get-CollectorCustomConfig {
             $rawNorm = $raw -replace "\u0000", ""
             $rawNorm = $rawNorm.Trim([char]0xFEFF)
             
-            # Additional normalization: remove line comments (// style) which are not valid JSON
-            # This helps users who may include comments in their config files
-            $lines = $rawNorm -split "`r?`n"
-            $cleanedLines = @()
-            foreach ($line in $lines) {
-                # Remove // comments but preserve URLs (http://, https://)
-                $trimmedLine = $line.Trim()
-                if ($trimmedLine -match '^//') {
-                    # Skip full-line comments
-                    continue
-                }
-                # Remove inline comments (but not in strings - simplified approach)
-                # This is not perfect but handles basic cases
-                if ($trimmedLine -notmatch '^\s*"' -and $trimmedLine -match '\s+//') {
-                    $line = $line -replace '\s+//.*$', ''
-                }
-                $cleanedLines += $line
-            }
-            $rawNorm = $cleanedLines -join "`n"
-            
+            # Parse JSON (PowerShell's ConvertFrom-Json supports // comments natively)
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
+            
             if ($null -eq $cfg) {
                 Write-LogMessage "  Custom config parsed as null: $candidate" "Yellow"
                 continue

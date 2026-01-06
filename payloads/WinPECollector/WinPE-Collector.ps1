@@ -132,6 +132,56 @@ function Write-SessionLogSection {
     Write-SessionLog "=== $Title ==="
 }
 
+function Redact-BitLockerKey {
+    <#
+    .SYNOPSIS
+        Redacts BitLocker recovery keys from text output to prevent exposure in logs or console.
+    
+    .DESCRIPTION
+        Searches for 48-digit recovery keys (with or without dashes) and replaces them with "[REDACTED]".
+        This prevents sensitive BitLocker recovery keys from appearing in manage-bde output,
+        error messages, or log files.
+    
+    .PARAMETER Text
+        The text to redact. Can be a string or array of strings.
+    
+    .EXAMPLE
+        Redact-BitLockerKey -Text $manageBdeOutput
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [AllowEmptyString()]
+        $Text
+    )
+    
+    if ($null -eq $Text) {
+        return ""
+    }
+    
+    # Convert to string if it's an array or other type
+    $textStr = if ($Text -is [array]) {
+        $Text -join "`n"
+    }
+    else {
+        $Text.ToString()
+    }
+    
+    # Pattern 1: 48 digits with dashes (e.g., 123456-789012-345678-901234-567890-123456-789012-345678)
+    # This is the formatted BitLocker recovery key format with 8 groups of 6 digits separated by dashes
+    $textStr = $textStr -replace '\b\d{6}-\d{6}-\d{6}-\d{6}-\d{6}-\d{6}-\d{6}-\d{6}\b', '[REDACTED]'
+    
+    # Pattern 2: 48 consecutive digits (e.g., 123456789012345678901234567890123456789012345678)
+    # This catches unformatted keys
+    $textStr = $textStr -replace '\b\d{48}\b', '[REDACTED]'
+    
+    # Pattern 3: Partial patterns that might appear in command lines or error messages
+    # Look for sequences that have at least 3 groups of 6 digits with dashes
+    $textStr = $textStr -replace '(?:\d{6}-){2,}\d{6}(?:-\d{6})*', '[REDACTED]'
+    
+    return $textStr
+}
+
 function Invoke-ExternalCommandText {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
@@ -205,10 +255,10 @@ function Write-DriveHealthDiagnosticsToSessionLog {
     }
 
     Write-SessionLog "--- manage-bde -status ${dl}: ---"
-    Write-SessionLog (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status', "${dl}:"))
+    Write-SessionLog (Redact-BitLockerKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status', "${dl}:")))
 
     Write-SessionLog "--- manage-bde -protectors -get ${dl}: ---"
-    Write-SessionLog (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-protectors', '-get', "${dl}:"))
+    Write-SessionLog (Redact-BitLockerKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-protectors', '-get', "${dl}:")))
 
     if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
         try {
@@ -434,7 +484,7 @@ function Invoke-DiskHealthWorkflow {
 
     $lines += ""
     $lines += "=== BitLocker (manage-bde -status) ==="
-    $lines += (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status'))
+    $lines += (Redact-BitLockerKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status')))
 
     $problemVolumes = @()
     $vols = @()
@@ -668,7 +718,7 @@ function Save-SessionEnvironmentSnapshot {
         $lines += "=== BitLocker (manage-bde -status, best-effort) ==="
         try {
             if (Get-Command manage-bde -ErrorAction SilentlyContinue) {
-                $lines += (manage-bde -status 2>&1)
+                $lines += (Redact-BitLockerKey -Text (manage-bde -status 2>&1))
             }
             else {
                 $lines += "manage-bde not available in this WinPE image."
@@ -1244,7 +1294,7 @@ function Unlock-BitLockerDrive {
                 }
                 else {
                     Write-LogMessage "Failed to unlock drive. Invalid recovery key." "Red"
-                    Write-Host "Error: $result" -ForegroundColor Red
+                    Write-Host "Error: $(Redact-BitLockerKey -Text $result)" -ForegroundColor Red
                 }
             }
             catch {
@@ -1705,7 +1755,7 @@ function Invoke-OfflineDiagnosticsCollection {
         # Use manage-bde to get status
         $manageBdeResult = manage-bde -status "$($DriveLetter):" 2>&1
         $blInfo += "manage-bde -status output:"
-        $blInfo += $manageBdeResult
+        $blInfo += (Redact-BitLockerKey -Text $manageBdeResult)
         $blInfo += ""
         
         $blInfo | Out-File (Join-Path $systemInfoDir "BitLocker_Status_Offline.txt")

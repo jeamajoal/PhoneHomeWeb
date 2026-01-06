@@ -156,6 +156,26 @@ function Invoke-ExternalCommandText {
     }
 }
 
+# Collects and logs comprehensive drive health and diagnostic information for a specified drive.
+# This function gathers multiple diagnostic data points including volume properties, partition details,
+# BitLocker status, filesystem information, and disk integrity checks to help troubleshoot drive issues.
+#
+# Parameters:
+#   DriveLetter - Single letter (A-Z) identifying the target drive. Required.
+#   Context - Optional descriptive label added to the log section title (e.g., "After BitLocker unlock",
+#             "Before repair attempt"). Helps correlate diagnostics with workflow stages when the same
+#             drive is diagnosed multiple times during a session.
+#
+# Information logged includes:
+#   - Get-Volume output (size, filesystem, health status, operational status)
+#   - Get-Partition output (disk number, partition type, offset, access paths)
+#   - manage-bde -status (BitLocker encryption status, protection methods)
+#   - manage-bde -protectors -get (key protector details)
+#   - Get-BitLockerVolume cmdlet output (if available)
+#   - mountvol volume GUID path
+#   - fsutil fsinfo volumeinfo (filesystem details, serial number)
+#   - fsutil dirty query (dirty bit status)
+#   - chkdsk read-only scan (filesystem errors without modification)
 function Write-DriveHealthDiagnosticsToSessionLog {
     param(
         [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z]$')][string]$DriveLetter,
@@ -403,6 +423,58 @@ function Test-VolumeNeedsRepair {
 }
 
 function Invoke-DiskHealthWorkflow {
+    <#
+    .SYNOPSIS
+    Performs a comprehensive disk health assessment and optionally repairs detected issues.
+
+    .DESCRIPTION
+    This function generates a detailed disk health report that includes:
+    - Disk, partition, and volume information from PowerShell cmdlets and diskpart
+    - BitLocker encryption status via manage-bde
+    - Volume health checks using fsutil and chkdsk
+    
+    When the -AttemptRepair switch is enabled, the function provides an interactive workflow
+    that allows the user to:
+    - Review volumes flagged as needing repair
+    - Choose between fast repair (chkdsk /f) or deep scan (chkdsk /r)
+    - Optionally repair the EFI System Partition (FAT32)
+    
+    The function is designed for WinPE environments where user interaction is expected and
+    safe disk repair operations can be performed without data access conflicts.
+
+    .PARAMETER WorkingRoot
+    The root directory where the disk health report and temporary files will be saved.
+    Required. The directory must exist and be writable. The report will be named 
+    "DiskHealthReport-{timestamp}.txt".
+
+    .PARAMETER AttemptRepair
+    Optional switch that enables the interactive repair workflow. When specified, the function
+    will prompt the user to choose repair options for any volumes flagged as needing repair.
+    Without this switch, the function only generates a report and identifies problem volumes.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs"
+    
+    Generates a disk health report in C:\WinPE-Logs without attempting any repairs.
+    Identifies and lists any volumes that need repair.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs" -AttemptRepair
+    
+    Generates a disk health report and then prompts the user with an interactive menu
+    to select repair options for any detected problem volumes. Supports fast repair (/f),
+    deep scan (/r), or cancellation. May also prompt for EFI partition repair.
+
+    .OUTPUTS
+    Boolean. Returns $true if the workflow completes successfully, $false otherwise.
+
+    .NOTES
+    - Uses Get-Volume, Get-Disk, Get-Partition, diskpart, manage-bde, fsutil, and chkdsk
+    - Interactive repair prompts require user input when -AttemptRepair is specified
+    - EFI repair temporarily assigns a drive letter to the EFI System Partition (requires 
+      a free drive letter to be available; operation is skipped if none are available)
+    - All repair output is appended to the disk health report file
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$WorkingRoot,
         [switch]$AttemptRepair

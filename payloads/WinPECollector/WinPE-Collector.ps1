@@ -1105,7 +1105,7 @@ function Get-DriveInfo {
 
         $info = [PSCustomObject]@{
             DriveLetter       = $driveLetter
-            FileSystem        = $fs
+            FileSystem        = if ($fs) { $fs } else { 'Unknown' }
             Size              = $volume.Size
             SizeGB            = [Math]::Round($volume.Size / 1GB, 2)
             FreeSpace         = $volume.SizeRemaining

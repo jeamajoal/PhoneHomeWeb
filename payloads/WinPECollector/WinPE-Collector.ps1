@@ -147,12 +147,14 @@ function Redact-BitLockerRecoveryKey {
         return $Text
     }
 
-    # Redact BitLocker numerical recovery passwords in standard format (8 groups of 6 digits with hyphens)
-    # Pattern: 123456-123456-123456-123456-123456-123456-123456-123456
-    $redacted = $Text -replace '\b\d{6}(-\d{6}){7}\b', '[REDACTED]'
+    # BitLocker recovery key pattern: 8 groups of 6 digits with hyphens (e.g., 123456-123456-...-123456)
+    $keyPattern = '\d{6}(-\d{6}){7}'
+
+    # Redact BitLocker numerical recovery passwords in standard format
+    $redacted = $Text -replace "\b$keyPattern\b", '[REDACTED]'
 
     # Redact recovery passwords in "Password:" lines from manage-bde output
-    $redacted = $redacted -replace '(?im)(^\s*Password\s*:\s*)\d{6}(-\d{6}){7}\s*$', '$1[REDACTED]'
+    $redacted = $redacted -replace "(?im)(^\s*Password\s*:\s*)$keyPattern\s*$", '$1[REDACTED]'
 
     # Redact recovery passwords that may appear without hyphens (48 consecutive digits)
     $redacted = $redacted -replace '\b\d{48}\b', '[REDACTED]'
@@ -705,7 +707,7 @@ function Save-SessionEnvironmentSnapshot {
         $lines += "=== BitLocker (manage-bde -status, best-effort) ==="
         try {
             if (Get-Command manage-bde -ErrorAction SilentlyContinue) {
-                $lines += (Redact-BitLockerRecoveryKey -Text ((manage-bde -status 2>&1) | Out-String))
+                $lines += (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status')))
             }
             else {
                 $lines += "manage-bde not available in this WinPE image."
@@ -1049,7 +1051,6 @@ function Get-DriveInfo {
         if (-not $info.IsEncrypted -and -not $info.IsLocked -and $hasManageBde) {
             try {
                 $manageBde = (manage-bde -status "$($driveLetter):" 2>&1 | Out-String)
-                # Redact any recovery keys for defense-in-depth (even though this is only used for pattern matching)
                 $manageBde = Redact-BitLockerRecoveryKey -Text $manageBde
 
                 # Conversion Status is always present, even when Fully Decrypted.
@@ -1075,7 +1076,6 @@ function Get-DriveInfo {
 
                 if ($info.IsEncrypted -and -not $info.KeyProtectorId) {
                     $protectors = (manage-bde -protectors -get "$($driveLetter):" 2>&1 | Out-String)
-                    # Redact any recovery keys for defense-in-depth (even though this is only used for pattern matching)
                     $protectors = Redact-BitLockerRecoveryKey -Text $protectors
                     if ($protectors -match 'Numerical Password:\s*(?:\r?\n)+\s*ID:\s*\{([0-9A-Fa-f-]{36})\}') {
                         $info.KeyProtectorId = $Matches[1]

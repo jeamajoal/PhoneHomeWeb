@@ -1378,7 +1378,7 @@ function Unlock-BitLockerDrive {
                 }
                 else {
                     Write-LogMessage "Failed to unlock drive. Invalid recovery key." "Red"
-                    Write-Host "Error: $(Redact-BitLockerRecoveryKey -Text $result)" -ForegroundColor Red
+                    Write-Host "Error: $(Redact-BitLockerRecoveryKey -Text ($result | Out-String))" -ForegroundColor Red
                 }
             }
             catch {

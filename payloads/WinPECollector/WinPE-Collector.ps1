@@ -720,7 +720,7 @@ function Get-CollectorCustomConfig {
 
                         $cfg2 = $text | ConvertFrom-Json -ErrorAction Stop
                         if ($null -ne $cfg2) {
-                            Write-LogMessage "  Loaded custom config (alternate encoding): $candidate" "Gray" -LogOnly
+                            Write-LogMessage "  Loaded custom config using $($enc.EncodingName) encoding: $candidate" "Gray" -LogOnly
                             return $cfg2
                         }
                     }

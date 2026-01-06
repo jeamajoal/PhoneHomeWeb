@@ -123,6 +123,626 @@ function Write-Section {
     Write-SessionLog ""
 }
 
+function Redact-BitLockerRecoveryKey {
+    <#
+    .SYNOPSIS
+        Redacts BitLocker recovery keys from text to prevent sensitive data exposure in logs.
+    .DESCRIPTION
+        This function identifies and redacts BitLocker numerical recovery passwords (48-digit keys
+        formatted as 8 groups of 6 digits) from command output or log text. It preserves the
+        structure and context of the output while replacing the actual key values with [REDACTED].
+    .PARAMETER Text
+        The text content that may contain BitLocker recovery keys to be redacted.
+    .EXAMPLE
+        $output = manage-bde -protectors -get C:
+        $safeOutput = Redact-BitLockerRecoveryKey -Text $output
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $Text
+    }
+
+    # BitLocker recovery key pattern: 8 groups of 6 digits with hyphens (e.g., 123456-123456-...-123456)
+    $keyPattern = '\d{6}(-\d{6}){7}'
+
+    # Redact BitLocker numerical recovery passwords in standard format
+    $redacted = $Text -replace "\b$keyPattern\b", '[REDACTED]'
+
+    # Redact recovery passwords in "Password:" lines from manage-bde output
+    $redacted = $redacted -replace "(?im)(^\s*Password\s*:\s*)$keyPattern\s*$", '$1[REDACTED]'
+
+    # Redact recovery passwords that may appear without hyphens (48 consecutive digits)
+    $redacted = $redacted -replace '\b\d{48}\b', '[REDACTED]'
+
+    return $redacted
+}
+
+function Write-SessionLogSection {
+    param(
+        [Parameter(Mandatory = $true)][string]$Title
+    )
+
+    Write-SessionLog ""
+    Write-SessionLog "=== $Title ==="
+}
+
+function Invoke-ExternalCommandText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [string[]]$Args = @()
+    )
+
+    try {
+        $cmd = Get-Command $Exe -ErrorAction SilentlyContinue
+        if (-not $cmd) {
+            return "Command not available: $Exe"
+        }
+
+        $output = & $cmd.Source @Args 2>&1 | Out-String
+        if ([string]::IsNullOrWhiteSpace($output)) {
+            return "(no output)"
+        }
+
+        return $output.TrimEnd()
+    }
+    catch {
+        return "ERROR running $Exe $($Args -join ' '): $($_.Exception.Message)"
+    }
+}
+
+# Collects and logs comprehensive drive health and diagnostic information for a specified drive.
+# This function gathers multiple diagnostic data points including volume properties, partition details,
+# BitLocker status, filesystem information, and disk integrity checks to help troubleshoot drive issues.
+#
+# Parameters:
+#   DriveLetter - Single letter (A-Z) identifying the target drive. Required.
+#   Context - Optional descriptive label added to the log section title (e.g., "After BitLocker unlock",
+#             "Before repair attempt"). Helps correlate diagnostics with workflow stages when the same
+#             drive is diagnosed multiple times during a session.
+#
+# Information logged includes:
+#   - Get-Volume output (size, filesystem, health status, operational status)
+#   - Get-Partition output (disk number, partition type, offset, access paths)
+#   - manage-bde -status (BitLocker encryption status, protection methods)
+#   - manage-bde -protectors -get (key protector details)
+#   - Get-BitLockerVolume cmdlet output (if available)
+#   - mountvol volume GUID path
+#   - fsutil fsinfo volumeinfo (filesystem details, serial number)
+#   - fsutil dirty query (dirty bit status)
+#   - chkdsk read-only scan (filesystem errors without modification)
+function Write-DriveHealthDiagnosticsToSessionLog {
+    param(
+        [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z]$')][string]$DriveLetter,
+        [string]$Context = ""
+    )
+
+    $dl = $DriveLetter.ToUpperInvariant()
+    $prefix = if ($Context) { " ($Context)" } else { "" }
+    Write-SessionLogSection -Title "Drive Diagnostics: ${dl}:$prefix"
+
+    try {
+        # Storage cmdlets can cache state in WinPE; refresh when possible.
+        if (Get-Command Update-HostStorageCache -ErrorAction SilentlyContinue) {
+            Update-HostStorageCache -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
+    catch {
+        # ignore
+    }
+
+    try {
+        Write-SessionLog "--- Get-Volume -DriveLetter $dl ---"
+        $vol = Get-Volume -DriveLetter $dl -ErrorAction SilentlyContinue
+        if ($vol) {
+            ($vol | Format-List * | Out-String).TrimEnd() | Write-SessionLog
+        }
+        else {
+            Write-SessionLog "Get-Volume returned no object for $dl"
+        }
+    }
+    catch {
+        Write-SessionLog "Get-Volume error: $($_.Exception.Message)"
+    }
+
+    try {
+        Write-SessionLog "--- Get-Partition -DriveLetter $dl ---"
+        $part = Get-Partition -DriveLetter $dl -ErrorAction SilentlyContinue
+        if ($part) {
+            ($part | Format-List * | Out-String).TrimEnd() | Write-SessionLog
+        }
+        else {
+            Write-SessionLog "Get-Partition returned no object for $dl"
+        }
+    }
+    catch {
+        Write-SessionLog "Get-Partition error: $($_.Exception.Message)"
+    }
+
+    Write-SessionLog "--- manage-bde -status ${dl}: ---"
+    Write-SessionLog (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status', "${dl}:")))
+
+    Write-SessionLog "--- manage-bde -protectors -get ${dl}: ---"
+    Write-SessionLog (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-protectors', '-get', "${dl}:")))
+
+    if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
+        try {
+            Write-SessionLog "--- Get-BitLockerVolume -MountPoint ${dl}: ---"
+            $bl = Get-BitLockerVolume -MountPoint "${dl}:" -ErrorAction SilentlyContinue
+            if ($bl) {
+                ($bl | Format-List * | Out-String).TrimEnd() | Write-SessionLog
+            }
+            else {
+                Write-SessionLog "Get-BitLockerVolume returned no object for $dl"
+            }
+        }
+        catch {
+            Write-SessionLog "Get-BitLockerVolume error: $($_.Exception.Message)"
+        }
+    }
+
+    Write-SessionLog "--- mountvol ${dl}: /L ---"
+    Write-SessionLog (Invoke-ExternalCommandText -Exe 'mountvol' -Args @("${dl}:", '/L'))
+
+    Write-SessionLog "--- fsutil fsinfo volumeinfo ${dl}: ---"
+    Write-SessionLog (Invoke-ExternalCommandText -Exe 'fsutil' -Args @('fsinfo', 'volumeinfo', "${dl}:"))
+
+    Write-SessionLog "--- fsutil dirty query ${dl}: ---"
+    Write-SessionLog (Invoke-ExternalCommandText -Exe 'fsutil' -Args @('dirty', 'query', "${dl}:"))
+
+    # Read-only filesystem check (no /f) to explain "Unknown/0B" symptoms.
+    Write-SessionLog "--- chkdsk ${dl}: (read-only) ---"
+    Write-SessionLog (Invoke-ExternalCommandText -Exe 'chkdsk' -Args @("${dl}:"))
+}
+
+function Get-FreeDriveLetter {
+    param(
+        [string[]]$Preferred = @('S','T','U','V','W','Y','Z','R','Q','P')
+    )
+
+    try {
+        $used = @(Get-Volume -ErrorAction SilentlyContinue |
+                Where-Object { $_.DriveLetter } |
+                ForEach-Object { $_.DriveLetter.ToString().ToUpperInvariant() })
+
+        foreach ($l in $Preferred) {
+            if ($used -notcontains $l) {
+                return $l
+            }
+        }
+    }
+    catch {
+        # ignore
+    }
+
+    return $null
+}
+
+function Get-ThumbDriveRoot {
+    <#
+    .SYNOPSIS
+        Best-effort detection of a removable USB thumb drive root in WinPE.
+    .DESCRIPTION
+        Returns a root path like "E:\" if a suitable removable volume is found.
+        If multiple removable volumes exist, prefers one containing BL_Keys.txt.
+        Returns $null if no suitable thumb drive is detected or if an error occurs.
+    .OUTPUTS
+        System.String
+            A drive root path such as "E:\" when a thumb drive is detected, or $null when no candidate is found.
+    #>
+    try {
+        $expectedLabel = 'WINPE_DIAG'
+        $candidates = @()
+
+        # Preferred: Storage cmdlets (available in most WinPE builds with PowerShell)
+        try {
+            $allWithLetters = @(Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveLetter -ne 'X' })
+            if ($allWithLetters -and $allWithLetters.Count -gt 0) {
+                # First, look for the known thumbdrive label (USB sticks sometimes show as Fixed in WinPE)
+                $labeled = @($allWithLetters | Where-Object { $_.FileSystemLabel -and $_.FileSystemLabel.ToString().Trim().ToUpperInvariant() -eq $expectedLabel })
+                if ($labeled.Count -gt 0) {
+                    foreach ($v in $labeled) {
+                        $candidates += [PSCustomObject]@{
+                            DriveLetter = $v.DriveLetter.ToString().ToUpperInvariant()
+                            Label       = $v.FileSystemLabel
+                            Root        = "$($v.DriveLetter):\"
+                        }
+                    }
+                }
+                else {
+                    # Fallback to removable volumes
+                    foreach ($v in ($allWithLetters | Where-Object { $_.DriveType -eq 'Removable' })) {
+                        $candidates += [PSCustomObject]@{
+                            DriveLetter = $v.DriveLetter.ToString().ToUpperInvariant()
+                            Label       = $v.FileSystemLabel
+                            Root        = "$($v.DriveLetter):\"
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            # ignore; try WMI next
+        }
+
+        # Fallback: WMI logical disks (sometimes available when storage cmdlets are limited)
+        if (-not $candidates -or $candidates.Count -eq 0) {
+            try {
+                $wmiAll = @(Get-CimInstance -ClassName Win32_LogicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.DeviceID -and $_.DeviceID -match '^[A-Za-z]:$' -and $_.DeviceID -ne 'X:' })
+                $wmiLabeled = @($wmiAll | Where-Object { $_.VolumeName -and $_.VolumeName.ToString().Trim().ToUpperInvariant() -eq $expectedLabel })
+                $wmiPreferred = if ($wmiLabeled.Count -gt 0) { $wmiLabeled } else { @($wmiAll | Where-Object { $_.DriveType -eq 2 }) }
+                foreach ($d in $wmiPreferred) {
+                    $letter = ($d.DeviceID -replace ':', '').ToUpperInvariant()
+                    if ($letter -match '^[A-Za-z]$') {
+                        $candidates += [PSCustomObject]@{
+                            DriveLetter = $letter
+                            Label       = $d.VolumeName
+                            Root        = "${letter}:\"
+                        }
+                    }
+                }
+            }
+            catch {
+                # ignore
+            }
+        }
+
+        if (-not $candidates -or $candidates.Count -eq 0) {
+            return $null
+        }
+
+        # Prefer the drive that actually has BL_Keys.txt
+        foreach ($c in $candidates) {
+            try {
+                if (Test-Path (Join-Path $c.Root 'BL_Keys.txt')) {
+                    return $c.Root
+                }
+            }
+            catch {
+                # ignore
+            }
+        }
+
+        return $candidates[0].Root
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-VolumeNeedsRepair {
+    [OutputType([System.Boolean])]
+    <#
+    .SYNOPSIS
+        Validates if a volume object indicates filesystem health issues that may require repair.
+    .DESCRIPTION
+        Examines a volume object for various indicators of filesystem corruption or health problems.
+        Primary checks include HealthStatus (Warning/Unhealthy) and OperationalStatus (repair needed/failed).
+        Secondary checks detect volumes where FileSystemType or FileSystem properties are null or 'Unknown',
+        or where the volume Size is zero. These conditions often indicate a drive letter exists but the
+        filesystem isn't mountable or readable.
+    .PARAMETER Volume
+        The volume object to test (typically from Get-Volume cmdlet).
+    .OUTPUTS
+        System.Boolean
+        Returns $true if the volume shows signs of needing repair, $false otherwise.
+    .NOTES
+        This function is designed for use in WinPE environments where filesystem health signals
+        may differ from full Windows installations.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]$Volume
+    )
+
+    try {
+        # HealthStatus/OperationalStatus are the primary signals in WinPE.
+        if ($Volume.HealthStatus -and $Volume.HealthStatus.ToString() -match '(?i)warning|unhealthy') {
+            return $true
+        }
+
+        if ($Volume.OperationalStatus) {
+            $ops = $Volume.OperationalStatus.ToString()
+            if ($ops -match '(?i)repair needed|full repair needed|needs repair|failed') {
+                return $true
+            }
+        }
+
+        # Secondary signals that often correlate with "drive letter exists but filesystem isn't mountable".
+        if (($null -eq $Volume.FileSystemType -or $Volume.FileSystemType -eq 'Unknown') -and ($null -eq $Volume.FileSystem -or $Volume.FileSystem -eq 'Unknown')) {
+            return $true
+        }
+        if ($Volume.Size -eq 0) {
+            return $true
+        }
+    }
+    catch {
+        # ignore
+    }
+
+    return $false
+}
+
+function Invoke-DiskHealthWorkflow {
+    [OutputType([System.Boolean])]
+    <#
+    .SYNOPSIS
+    Performs a comprehensive disk health assessment and optionally repairs detected issues.
+
+    .DESCRIPTION
+    This function generates a detailed disk health report that includes:
+    - Disk, partition, and volume information from PowerShell cmdlets and diskpart
+    - BitLocker encryption status via manage-bde
+    - Volume health checks using fsutil and chkdsk
+    
+    When the -AttemptRepair switch is enabled, the function provides an interactive workflow
+    that allows the user to:
+    - Review volumes flagged as needing repair
+    - Choose between fast repair (chkdsk /f) or deep scan (chkdsk /r)
+    - Optionally repair the EFI System Partition (FAT32)
+    
+    The function is designed for WinPE environments where user interaction is expected and
+    safe disk repair operations can be performed without data access conflicts.
+
+    .PARAMETER WorkingRoot
+    The root directory where the disk health report and temporary files will be saved.
+    Required. The directory must exist and be writable. The report will be named 
+    "DiskHealthReport-{timestamp}.txt".
+
+    .PARAMETER AttemptRepair
+    Optional switch that enables the interactive repair workflow. When specified, the function
+    will prompt the user to choose repair options for any volumes flagged as needing repair.
+    Without this switch, the function only generates a report and identifies problem volumes.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs"
+    
+    Generates a disk health report in C:\WinPE-Logs without attempting any repairs.
+    Identifies and lists any volumes that need repair.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs" -AttemptRepair
+    
+    Generates a disk health report and then prompts the user with an interactive menu
+    to select repair options for any detected problem volumes. Supports fast repair (/f),
+    deep scan (/r), or cancellation. May also prompt for EFI partition repair.
+
+    .OUTPUTS
+    Boolean. Returns $true if the workflow completes successfully, $false otherwise.
+
+    .NOTES
+    - Uses Get-Volume, Get-Disk, Get-Partition, diskpart, manage-bde, fsutil, and chkdsk
+    - Interactive repair prompts require user input when -AttemptRepair is specified
+    - EFI repair temporarily assigns a drive letter to the EFI System Partition (requires 
+      a free drive letter to be available; operation is skipped if none are available)
+    - All repair output is appended to the disk health report file
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingRoot,
+        [switch]$AttemptRepair
+    )
+
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $reportPath = Join-Path $WorkingRoot "DiskHealthReport-$timestamp.txt"
+
+    Write-Section "Disk Health"
+    Write-LogMessage "Generating disk/volume health report..." "Cyan"
+    Write-LogMessage "  $reportPath" "Gray" -LogOnly
+
+    $lines = @()
+    $lines += $Divider
+    $lines += "DISK HEALTH REPORT"
+    $lines += $Divider
+    $lines += "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $lines += "WorkingRoot: $WorkingRoot"
+    $lines += ""
+
+    try {
+        $lines += "=== Storage (Get-Disk / Get-Partition / Get-Volume) ==="
+        $lines += ((Get-Disk | Sort-Object Number | Format-Table -AutoSize | Out-String).TrimEnd())
+        $lines += ""
+        $lines += ((Get-Partition | Sort-Object DiskNumber, PartitionNumber | Format-Table -AutoSize | Out-String).TrimEnd())
+        $lines += ""
+        $lines += ((Get-Volume | Sort-Object DriveLetter | Format-Table -AutoSize | Out-String).TrimEnd())
+    }
+    catch {
+        $lines += "Storage cmdlets failed: $($_.Exception.Message)"
+    }
+
+    $lines += ""
+    $lines += "=== mountvol ==="
+    $lines += (Invoke-ExternalCommandText -Exe 'mountvol' -Args @())
+
+    $lines += ""
+    $lines += "=== diskpart (list disk / list volume / list partition) ==="
+    try {
+        $dpScript = Join-Path $WorkingRoot ("diskpart-health-" + $timestamp + ".txt")
+        @('list disk','list volume','list partition','exit') | Out-File -FilePath $dpScript -Force -Encoding ASCII
+        $lines += ((diskpart /s $dpScript 2>&1 | Out-String).TrimEnd())
+    }
+    catch {
+        $lines += "diskpart failed: $($_.Exception.Message)"
+    }
+
+    $lines += ""
+    $lines += "=== BitLocker (manage-bde -status) ==="
+    $lines += (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status')))
+
+    $problemVolumes = @()
+    $vols = @()
+    try {
+        $vols = @(Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter -and $_.DriveLetter -ne 'X' })
+    }
+    catch {
+        $vols = @()
+    }
+
+    foreach ($v in $vols) {
+        if (Test-VolumeNeedsRepair -Volume $v) {
+            $problemVolumes += $v
+        }
+    }
+
+    $lines += ""
+    $lines += "=== Volume Checks (fsutil + chkdsk read-only) ==="
+    if ($vols.Count -eq 0) {
+        $lines += "No volumes with drive letters were detected."
+    }
+    else {
+        foreach ($v in $vols | Sort-Object DriveLetter) {
+            $dl = $v.DriveLetter.ToString().ToUpperInvariant()
+            $lines += ""
+            $lines += "--- ${dl}: ---"
+            $lines += (Invoke-ExternalCommandText -Exe 'fsutil' -Args @('fsinfo','volumeinfo',"${dl}:"))
+            $lines += (Invoke-ExternalCommandText -Exe 'fsutil' -Args @('dirty','query',"${dl}:"))
+            $lines += (Invoke-ExternalCommandText -Exe 'chkdsk' -Args @("${dl}:"))
+        }
+    }
+
+    $lines | Out-File -FilePath $reportPath -Force -Encoding UTF8
+    Write-LogMessage "Disk health report saved" "Green"
+    Write-LogMessage "  $reportPath" "Gray" -LogOnly
+
+    if (-not $AttemptRepair) {
+        if ($problemVolumes.Count -gt 0) {
+            $bad = ($problemVolumes | Sort-Object DriveLetter | ForEach-Object { $_.DriveLetter }) -join ', '
+            Write-LogMessage "Volumes flagged as needing repair: $bad" "Yellow"
+        }
+        else {
+            Write-LogMessage "No volumes were flagged as needing repair by Get-Volume." "Green"
+        }
+        return $true
+    }
+
+    Write-Host "" 
+    Write-Host $Divider -ForegroundColor Yellow
+    Write-Host " OPTIONAL REPAIR" -ForegroundColor Yellow
+    Write-Host $Divider -ForegroundColor Yellow
+    Write-Host "" 
+    Write-Host "This can modify the disk (runs chkdsk /f)." -ForegroundColor Yellow
+    Write-Host "Only continue if you are OK with making changes." -ForegroundColor Yellow
+    Write-Host "" 
+
+    if ($problemVolumes.Count -eq 0) {
+        Write-Host "No volumes were flagged as needing repair; nothing to do." -ForegroundColor Gray
+        return $true
+    }
+
+    $bad = ($problemVolumes | Sort-Object DriveLetter | ForEach-Object { $_.DriveLetter }) -join ', '
+    Write-Host "Volumes flagged as needing repair: $bad" -ForegroundColor Yellow
+    Write-Host "" 
+    Write-Host "Repair options:" -ForegroundColor Cyan
+    Write-Host "  [1] Fast repair (chkdsk /f)" -ForegroundColor Gray
+    Write-Host "  [2] Deep scan (chkdsk /r) - SLOW, more disk stress" -ForegroundColor Gray
+    Write-Host "  [3] Cancel" -ForegroundColor Gray
+
+    $repairMode = $null
+    while ($true) {
+        $sel = Read-Host "Select 1-3"
+        switch ($sel) {
+            '1' { $repairMode = 'f'; break }
+            '2' { $repairMode = 'r'; break }
+            '3' {
+                Write-LogMessage "Repair declined by user." "Yellow"
+                return $true
+            }
+            default { Write-Host "Invalid selection." -ForegroundColor Yellow }
+        }
+        if ($repairMode) { break }
+    }
+
+    if ($repairMode -eq 'r') {
+        Write-Host "" 
+        Write-Host "WARNING: chkdsk /r can take a long time and may stress a failing disk." -ForegroundColor Yellow
+        Write-Host "Use /r when you suspect physical media issues or /f is not enough." -ForegroundColor Yellow
+        $confirmR = Read-Host "Proceed with chkdsk /r on these volumes? (y/n)"
+        if ($confirmR -notin @('y','Y')) {
+            Write-LogMessage "Deep scan declined by user." "Yellow"
+            return $true
+        }
+    }
+
+    foreach ($v in ($problemVolumes | Sort-Object DriveLetter)) {
+        $dl = $v.DriveLetter.ToString().ToUpperInvariant()
+        if ($repairMode -eq 'r') {
+            Write-LogMessage "Running chkdsk /r on ${dl}: (deep scan) ..." "Cyan"
+            $out = Invoke-ExternalCommandText -Exe 'chkdsk' -Args @("${dl}:", '/r')
+        }
+        else {
+            Write-LogMessage "Running chkdsk /f on ${dl}: ..." "Cyan"
+            $out = Invoke-ExternalCommandText -Exe 'chkdsk' -Args @("${dl}:", '/f')
+        }
+        try {
+            Add-Content -Path $reportPath -Encoding UTF8 -Value "" 
+            Add-Content -Path $reportPath -Encoding UTF8 -Value "=== REPAIR OUTPUT: CHKDSK ${dl}: $(if ($repairMode -eq 'r') { '/r' } else { '/f' }) ==="
+            Add-Content -Path $reportPath -Encoding UTF8 -Value $out
+        
+        }
+        catch {
+            # ignore report write failures
+        }
+    }
+
+    # Optional EFI System Partition repair (FAT32). This is common in "Full Repair Needed" cases.
+    try {
+        $efi = @(Get-Partition -ErrorAction SilentlyContinue | Where-Object { $_.GptType -and $_.GptType.ToString().ToUpperInvariant() -eq '{C12A7328-F81F-11D2-BA4B-00A0C93EC93B}' })
+    }
+    catch {
+        $efi = @()
+    }
+
+    if ($efi.Count -gt 0) {
+        Write-Host "" 
+        Write-Host "A boot EFI System Partition (small FAT32 volume used for boot files) was detected. In some cases this partition may also need repair." -ForegroundColor Yellow
+        $efiConfirm = Read-Host "Attempt to repair the EFI System Partition now using a temporary drive letter and chkdsk /f? (y/n)"
+        if ($efiConfirm -in @('y','Y')) {
+            $letter = Get-FreeDriveLetter
+            if (-not $letter) {
+                Write-LogMessage "No free drive letter available for EFI repair." "Yellow"
+            }
+            else {
+                $p0 = $efi[0]
+                try {
+                    Write-LogMessage "Assigning ${letter}: to EFI partition (Disk $($p0.DiskNumber) Part $($p0.PartitionNumber))" "Cyan"
+                    Set-Partition -DiskNumber $p0.DiskNumber -PartitionNumber $p0.PartitionNumber -NewDriveLetter $letter -ErrorAction Stop | Out-Null
+                    Start-Sleep -Seconds 1
+                    Write-LogMessage "Running chkdsk /f on ${letter}: (EFI) ..." "Cyan"
+                    $efiOut = Invoke-ExternalCommandText -Exe 'chkdsk' -Args @("${letter}:", '/f')
+                    try {
+                        Add-Content -Path $reportPath -Encoding UTF8 -Value "" 
+                        Add-Content -Path $reportPath -Encoding UTF8 -Value "=== REPAIR OUTPUT: CHKDSK ${letter}: /f (EFI) ==="
+                        Add-Content -Path $reportPath -Encoding UTF8 -Value $efiOut
+                    }
+                    catch {
+                        # ignore report write failures
+                    }
+                }
+                catch {
+                    Write-LogMessage "EFI repair step failed: $($_.Exception.Message)" "Yellow"
+                }
+                finally {
+                    try {
+                        $access = "${letter}:\"
+                        if (Get-Command Remove-PartitionAccessPath -ErrorAction SilentlyContinue) {
+                            Remove-PartitionAccessPath -DiskNumber $p0.DiskNumber -PartitionNumber $p0.PartitionNumber -AccessPath $access -ErrorAction SilentlyContinue | Out-Null
+                        }
+                    }
+                    catch {
+                        # ignore
+                    }
+                }
+            }
+        }
+    }
+
+    Write-LogMessage "Repair attempts complete. Report updated:" "Green"
+    Write-LogMessage "  $reportPath" "Gray" -LogOnly
+    return $true
+}
+
 function Save-SessionEnvironmentSnapshot {
     param(
         [Parameter(Mandatory = $true)][string]$WorkingRoot
@@ -152,6 +772,60 @@ function Save-SessionEnvironmentSnapshot {
         }
         catch {
             $lines += "Storage snapshot not available: $($_.Exception.Message)"
+        }
+
+        $lines += ""
+        $lines += "=== mountvol ==="
+        try {
+            $lines += (mountvol 2>&1)
+        }
+        catch {
+            $lines += "mountvol not available: $($_.Exception.Message)"
+        }
+
+        $lines += ""
+        $lines += "=== diskpart (list disk / list volume, best-effort) ==="
+        try {
+            $dpScript = Join-Path $WorkingRoot ("diskpart-snapshot-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".txt")
+            @(
+                'list disk',
+                'list volume',
+                'list partition',
+                'exit'
+            ) | Out-File -FilePath $dpScript -Force -Encoding ASCII
+
+            $lines += (diskpart /s $dpScript 2>&1)
+        }
+        catch {
+            $lines += "diskpart snapshot not available: $($_.Exception.Message)"
+        }
+
+        $lines += ""
+        $lines += "=== BitLocker (manage-bde -status, best-effort) ==="
+        try {
+            if (Get-Command manage-bde -ErrorAction SilentlyContinue) {
+                $lines += (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status')))
+            }
+            else {
+                $lines += "manage-bde not available in this WinPE image."
+            }
+        }
+        catch {
+            $lines += "manage-bde status not available: $($_.Exception.Message)"
+        }
+
+        $lines += ""
+        $lines += "=== BitLocker (Get-BitLockerVolume, best-effort) ==="
+        try {
+            if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
+                $lines += ((Get-BitLockerVolume | Format-Table -AutoSize | Out-String).TrimEnd())
+            }
+            else {
+                $lines += "Get-BitLockerVolume cmdlet not available in this WinPE image."
+            }
+        }
+        catch {
+            $lines += "Get-BitLockerVolume not available: $($_.Exception.Message)"
         }
         $lines += ""
         $lines += "=== DISM (WinPE driver list, best-effort) ==="
@@ -422,14 +1096,30 @@ function Get-DriveInfo {
     
     foreach ($volume in $volumes) {
         $driveLetter = $volume.DriveLetter
+
+        $fs = $null
+        try {
+            if ($null -ne $volume.PSObject.Properties['FileSystemType'] -and $volume.FileSystemType) {
+                $fs = $volume.FileSystemType
+            }
+            elseif ($null -ne $volume.PSObject.Properties['FileSystem'] -and $volume.FileSystem) {
+                $fs = $volume.FileSystem
+            }
+        }
+        catch {
+            $fs = $null
+        }
+
         $info = [PSCustomObject]@{
             DriveLetter       = $driveLetter
-            FileSystem        = $volume.FileSystem
+            FileSystem        = if ($fs) { $fs } else { 'Unknown' }
             Size              = $volume.Size
             SizeGB            = [Math]::Round($volume.Size / 1GB, 2)
             FreeSpace         = $volume.SizeRemaining
             FreeSpaceGB       = [Math]::Round($volume.SizeRemaining / 1GB, 2)
             Label             = $volume.FileSystemLabel
+            HealthStatus      = $volume.HealthStatus
+            OperationalStatus = $volume.OperationalStatus
             IsLocked          = $false
             IsEncrypted       = $false
             IsWindowsOS       = $false
@@ -458,20 +1148,32 @@ function Get-DriveInfo {
         if (-not $info.IsEncrypted -and -not $info.IsLocked -and $hasManageBde) {
             try {
                 $manageBde = (manage-bde -status "$($driveLetter):" 2>&1 | Out-String)
-                if ($manageBde -match 'Conversion Status:\s+(.+)$') {
-                    $info.IsEncrypted = $true
+                $manageBde = Redact-BitLockerRecoveryKey -Text $manageBde
+
+                # Conversion Status is always present, even when Fully Decrypted.
+                # Only treat the volume as encrypted when the status is not Fully Decrypted.
+                if ($manageBde -match '(?im)^\s*Conversion Status:\s*(.+?)\s*$') {
+                    $conv = $Matches[1].Trim()
+                    if ($conv -and ($conv -notmatch '(?i)Fully\s+Decrypted')) {
+                        $info.IsEncrypted = $true
+                    }
                 }
-                if ($manageBde -match 'Lock Status:\s+Locked') {
-                    $info.IsEncrypted = $true
-                    $info.IsLocked = $true
-                }
-                elseif ($manageBde -match 'Lock Status:\s+Unlocked') {
-                    $info.IsEncrypted = $true
-                    $info.IsLocked = $false
+
+                if ($manageBde -match '(?im)^\s*Lock Status:\s*(.+?)\s*$') {
+                    $lock = $Matches[1].Trim()
+                    if ($lock -match '(?i)Locked') {
+                        $info.IsEncrypted = $true
+                        $info.IsLocked = $true
+                    }
+                    elseif ($lock -match '(?i)Unlocked') {
+                        $info.IsEncrypted = $true
+                        $info.IsLocked = $false
+                    }
                 }
 
                 if ($info.IsEncrypted -and -not $info.KeyProtectorId) {
                     $protectors = (manage-bde -protectors -get "$($driveLetter):" 2>&1 | Out-String)
+                    $protectors = Redact-BitLockerRecoveryKey -Text $protectors
                     if ($protectors -match 'Numerical Password:\s*(?:\r?\n)+\s*ID:\s*\{([0-9A-Fa-f-]{36})\}') {
                         $info.KeyProtectorId = $Matches[1]
                     }
@@ -587,6 +1289,56 @@ function Unlock-BitLockerDrive {
         return $false
     }
     
+    # If BL key file list exists on Drive (ThumbDriveRoot\BL_Keys.txt) try to unlock drives with those keys before prompting user
+    $keyList = @()
+    $thumbDriveRoot = Get-ThumbDriveRoot
+    if ($thumbDriveRoot) {
+        $keyFilePath = Join-Path $thumbDriveRoot "BL_Keys.txt"
+        if (Test-Path $keyFilePath) {
+            try {
+                $keyList = Get-Content -Path $keyFilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                Write-LogMessage "Found BitLocker key file at $keyFilePath; attempting to unlock drive $($DriveLetter): using listed keys..." "Cyan"
+                
+                foreach ($key in $keyList) {
+                    $cleanKey = $key -replace '\s', '' -replace '-', ''
+                    if ($cleanKey.Length -eq 48 -and $cleanKey -match '^\d{48}$') {
+                        $formattedKey = $cleanKey -replace '(.{6})', '$1-'
+                        $formattedKey = $formattedKey.TrimEnd('-')
+                        
+                        Write-LogMessage "Trying recovery key from file (redacted)" "Gray"
+                        try {
+                            $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
+                            $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
+                            
+                            if ($result -match "successfully|unlocked") {
+                                Write-LogMessage "Drive $($DriveLetter): successfully unlocked with key from file!" "Green"
+
+                                # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
+                                try {
+                                    Start-Sleep -Seconds 1
+                                    Write-DriveHealthDiagnosticsToSessionLog -DriveLetter $DriveLetter -Context 'Post-Unlock'
+                                }
+                                catch {
+                                    Write-LogMessage "Post-unlock diagnostics failed for $($DriveLetter): $($_.Exception.Message)" "Yellow" -LogOnly
+                                }
+
+                                return $true
+                            }
+                        }
+                        catch {
+                            # ignore individual key errors
+                        }
+                    }
+                }
+                
+                Write-LogMessage "None of the keys in $keyFilePath succeeded in unlocking drive $($DriveLetter):" "Yellow"
+            }
+            catch {
+                Write-LogMessage "Error reading BitLocker key file: $($_.Exception.Message)" "Yellow"
+            }
+        }
+    }
+
     $maxAttempts = 3
     $attempt = 0
     
@@ -614,14 +1366,25 @@ function Unlock-BitLockerDrive {
             try {
                 # Try using manage-bde (more reliable in WinPE)
                 $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
+                $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                 
                 if ($result -match "successfully|unlocked") {
                     Write-LogMessage "Drive $($DriveLetter): successfully unlocked!" "Green"
+
+                    # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
+                    try {
+                        Start-Sleep -Seconds 1
+                        Write-DriveHealthDiagnosticsToSessionLog -DriveLetter $DriveLetter -Context 'Post-Unlock'
+                    }
+                    catch {
+                        Write-LogMessage "Post-unlock diagnostics failed for $($DriveLetter): $($_.Exception.Message)" "Yellow" -LogOnly
+                    }
+
                     return $true
                 }
                 else {
                     Write-LogMessage "Failed to unlock drive. Invalid recovery key." "Red"
-                    Write-Host "Error: $result" -ForegroundColor Red
+                    Write-Host "Error: $(Redact-BitLockerRecoveryKey -Text ($result | Out-String))" -ForegroundColor Red
                 }
             }
             catch {
@@ -1107,6 +1870,7 @@ function Invoke-OfflineDiagnosticsCollection {
         
         # Use manage-bde to get status
         $manageBdeResult = manage-bde -status "$($DriveLetter):" 2>&1
+        $manageBdeResult = Redact-BitLockerRecoveryKey -Text ($manageBdeResult | Out-String)
         $blInfo += "manage-bde -status output:"
         $blInfo += $manageBdeResult
         $blInfo += ""
@@ -1686,6 +2450,34 @@ function Main {
             else {
                 Write-LogMessage "Could not unlock any drives with the provided key." "Red"
             }
+
+            Write-Host "" 
+            Write-Host "Post-unlock options:" -ForegroundColor Cyan
+            Write-Host "  [1] Generate post-unlock disk health report (no changes made)" -ForegroundColor Gray
+            Write-Host "  [2] Generate post-unlock report and attempt repairs on detected issues" -ForegroundColor Gray
+            Write-Host "  [3] Exit" -ForegroundColor Gray
+
+            $validSelection = $false
+            while (-not $validSelection) {
+                $choice = Read-Host "Select 1-3"
+                switch ($choice) {
+                    '1' {
+                        Invoke-DiskHealthWorkflow -WorkingRoot $workingRoot | Out-Null
+                        $validSelection = $true
+                    }
+                    '2' {
+                        Invoke-DiskHealthWorkflow -WorkingRoot $workingRoot -AttemptRepair | Out-Null
+                        $validSelection = $true
+                    }
+                    '3' {
+                        $validSelection = $true
+                    }
+                    default {
+                        Write-Host "Invalid selection." -ForegroundColor Yellow
+                    }
+                }
+            }
+
             Write-Host ""
             Read-Host "Press Enter to exit"
             return

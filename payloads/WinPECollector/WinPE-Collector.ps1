@@ -1402,6 +1402,43 @@ function Unlock-BitLockerDrive {
     return $false
 }
 
+function Remove-BomCharacters {
+    <#
+    .SYNOPSIS
+        Removes Byte Order Mark (BOM) characters from a string.
+    .DESCRIPTION
+        Removes U+FEFF (BOM) characters from the start and end of a string.
+        Uses character-by-character comparison for cross-version PowerShell compatibility.
+    .PARAMETER Text
+        The text string to process.
+    .OUTPUTS
+        String with BOM characters removed from start and end.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+    
+    if ([string]::IsNullOrEmpty($Text)) {
+        return $Text
+    }
+    
+    $result = $Text
+    
+    # Remove BOM from start
+    while ($result.Length -gt 0 -and $result[0] -eq [char]0xFEFF) {
+        $result = $result.Substring(1)
+    }
+    
+    # Remove BOM from end
+    while ($result.Length -gt 0 -and $result[$result.Length - 1] -eq [char]0xFEFF) {
+        $result = $result.Substring(0, $result.Length - 1)
+    }
+    
+    return $result
+}
+
 function Get-CollectorCustomConfig {
     param(
         [Parameter(Mandatory = $true)][string[]]$SearchRoots
@@ -1428,13 +1465,7 @@ function Get-CollectorCustomConfig {
 
             # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
             $rawNorm = $raw -replace "\u0000", ""
-            # Remove BOM (U+FEFF) from start and end - use [char] for cross-version compatibility
-            while ($rawNorm.Length -gt 0 -and $rawNorm[0] -eq [char]0xFEFF) {
-                $rawNorm = $rawNorm.Substring(1)
-            }
-            while ($rawNorm.Length -gt 0 -and $rawNorm[$rawNorm.Length - 1] -eq [char]0xFEFF) {
-                $rawNorm = $rawNorm.Substring(0, $rawNorm.Length - 1)
-            }
+            $rawNorm = Remove-BomCharacters -Text $rawNorm
             
             # Parse JSON (Note: PowerShell Core 7.x supports // comments, but Windows PowerShell 5.1 does not)
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
@@ -1478,13 +1509,7 @@ function Get-CollectorCustomConfig {
                     try {
                         $text = $enc.GetString($bytes)
                         $text = $text -replace "\u0000", ""
-                        # Remove BOM consistently
-                        while ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
-                            $text = $text.Substring(1)
-                        }
-                        while ($text.Length -gt 0 -and $text[$text.Length - 1] -eq [char]0xFEFF) {
-                            $text = $text.Substring(0, $text.Length - 1)
-                        }
+                        $text = Remove-BomCharacters -Text $text
                         if ([string]::IsNullOrWhiteSpace($text)) { continue }
 
                         $probe = $text.TrimStart()

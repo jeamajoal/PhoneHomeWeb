@@ -358,10 +358,11 @@ function Test-VolumeNeedsRepair {
     .DESCRIPTION
         Examines a volume object for various indicators of filesystem corruption or health problems.
         Primary checks include HealthStatus (Warning/Unhealthy) and OperationalStatus (repair needed/failed).
-        Secondary checks detect volumes with Unknown filesystem types and zero sizes, which often
-        indicate a drive letter exists but the filesystem isn't mountable or readable.
+        Secondary checks detect volumes where FileSystemType or FileSystem properties are null or 'Unknown',
+        or where the volume Size is zero. These conditions often indicate a drive letter exists but the
+        filesystem isn't mountable or readable.
     .PARAMETER Volume
-        The volume object to test (typically from Get-Volume or Get-Partition cmdlets).
+        The volume object to test (typically from Get-Volume cmdlet).
     .OUTPUTS
         System.Boolean
         Returns $true if the volume shows signs of needing repair, $false otherwise.

@@ -542,9 +542,9 @@ function Invoke-DiskHealthWorkflow {
         }
         try {
             Add-Content -Path $reportPath -Encoding UTF8 -Value "" 
-            $modeLabel = if ($repairMode -eq 'r') { '/r' } else { '/f' }
-            Add-Content -Path $reportPath -Encoding UTF8 -Value "=== REPAIR OUTPUT: CHKDSK ${dl}: $modeLabel ==="
+            Add-Content -Path $reportPath -Encoding UTF8 -Value "=== REPAIR OUTPUT: CHKDSK ${dl}: $(if ($repairMode -eq 'r') { '/r' } else { '/f' }) ==="
             Add-Content -Path $reportPath -Encoding UTF8 -Value $out
+        
         }
         catch {
             # ignore report write failures

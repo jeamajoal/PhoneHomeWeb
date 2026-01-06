@@ -690,7 +690,8 @@ function Invoke-DiskHealthWorkflow {
 
     if ($efi.Count -gt 0) {
         Write-Host "" 
-        $efiConfirm = Read-Host "Attempt EFI (FAT32) repair via temporary drive letter + chkdsk /f? (y/n)"
+        Write-Host "A boot EFI System Partition (small FAT32 volume used for boot files) was detected. In some cases this partition may also need repair." -ForegroundColor Yellow
+        $efiConfirm = Read-Host "Attempt to repair the EFI System Partition now using a temporary drive letter and chkdsk /f? (y/n)"
         if ($efiConfirm -in @('y','Y')) {
             $letter = Get-FreeDriveLetter
             if (-not $letter) {

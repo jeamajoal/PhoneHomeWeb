@@ -2417,6 +2417,9 @@ function Main {
     # Find Windows OS drives - force to array
     $windowsDrives = @($drives | Where-Object { $_.IsWindowsOS -eq $true })
     
+    # Track drives that were unlocked to avoid redundant unlock attempts
+    $unlockedDriveLetters = @()
+    
     # If no Windows OS found, assume BitLocker encrypted drives and prompt for recovery key
     if ($windowsDrives.Count -eq 0) {
         Write-LogMessage "No accessible Windows OS installations detected!" "Yellow"
@@ -2429,6 +2432,7 @@ function Main {
                 $unlocked = Unlock-BitLockerDrive -DriveLetter $drive.DriveLetter -KeyProtectorId $drive.KeyProtectorId
                 if ($unlocked) {
                     $unlockedAny = $true
+                    $unlockedDriveLetters += $drive.DriveLetter
                 }
             }
 
@@ -2519,8 +2523,8 @@ function Main {
     Write-Host ""
     
     Write-Section "Selected Target"
-    # Check if drive is locked
-    if ($targetDrive.IsLocked) {
+    # Check if drive is locked (skip if already unlocked in previous step)
+    if ($targetDrive.IsLocked -and $targetDrive.DriveLetter -notin $unlockedDriveLetters) {
         $unlocked = Unlock-BitLockerDrive -DriveLetter $targetDrive.DriveLetter
         
         if (-not $unlocked) {

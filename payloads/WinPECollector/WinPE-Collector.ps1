@@ -1407,12 +1407,17 @@ function Remove-BomCharacters {
     .SYNOPSIS
         Removes Byte Order Mark (BOM) characters from a string.
     .DESCRIPTION
-        Removes U+FEFF (BOM) characters from the start and end of a string.
-        Uses character-by-character comparison for cross-version PowerShell compatibility.
+        Removes all U+FEFF (BOM) characters from the start and end of a string.
+        Handles multiple consecutive BOM characters if present.
+        Uses character-by-character comparison for cross-version PowerShell compatibility
+        (works in both Windows PowerShell 5.1 and PowerShell 7+).
     .PARAMETER Text
         The text string to process.
     .OUTPUTS
-        String with BOM characters removed from start and end.
+        String with all BOM characters removed from start and end.
+    .EXAMPLE
+        Remove-BomCharacters -Text "$bom{ `"test`": `"value`" }$bom"
+        Returns the JSON string without BOM characters at start or end.
     #>
     param(
         [Parameter(Mandatory = $true)]

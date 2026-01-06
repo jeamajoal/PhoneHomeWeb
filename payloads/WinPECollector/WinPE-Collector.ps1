@@ -1049,6 +1049,8 @@ function Get-DriveInfo {
         if (-not $info.IsEncrypted -and -not $info.IsLocked -and $hasManageBde) {
             try {
                 $manageBde = (manage-bde -status "$($driveLetter):" 2>&1 | Out-String)
+                # Redact any recovery keys for defense-in-depth (even though this is only used for pattern matching)
+                $manageBde = Redact-BitLockerRecoveryKey -Text $manageBde
 
                 # Conversion Status is always present, even when Fully Decrypted.
                 # Only treat the volume as encrypted when the status is not Fully Decrypted.
@@ -1073,6 +1075,8 @@ function Get-DriveInfo {
 
                 if ($info.IsEncrypted -and -not $info.KeyProtectorId) {
                     $protectors = (manage-bde -protectors -get "$($driveLetter):" 2>&1 | Out-String)
+                    # Redact any recovery keys for defense-in-depth (even though this is only used for pattern matching)
+                    $protectors = Redact-BitLockerRecoveryKey -Text $protectors
                     if ($protectors -match 'Numerical Password:\s*(?:\r?\n)+\s*ID:\s*\{([0-9A-Fa-f-]{36})\}') {
                         $info.KeyProtectorId = $Matches[1]
                     }

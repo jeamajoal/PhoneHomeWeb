@@ -406,7 +406,8 @@ function Invoke-DiskHealthWorkflow {
 
     .PARAMETER WorkingRoot
     The root directory where the disk health report and temporary files will be saved.
-    Required. The report will be named "DiskHealthReport-{timestamp}.txt".
+    Required. The directory must exist and be writable. The report will be named 
+    "DiskHealthReport-{timestamp}.txt".
 
     .PARAMETER AttemptRepair
     Optional switch that enables the interactive repair workflow. When specified, the function
@@ -432,7 +433,8 @@ function Invoke-DiskHealthWorkflow {
     .NOTES
     - Uses Get-Volume, Get-Disk, Get-Partition, diskpart, manage-bde, fsutil, and chkdsk
     - Interactive repair prompts require user input when -AttemptRepair is specified
-    - EFI repair temporarily assigns a drive letter to the EFI System Partition
+    - EFI repair temporarily assigns a drive letter to the EFI System Partition (requires 
+      a free drive letter to be available; operation is skipped if none are available)
     - All repair output is appended to the disk health report file
     #>
     param(

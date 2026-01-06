@@ -2355,25 +2355,25 @@ function Main {
             Write-Host "  [2] Generate report + attempt repairs" -ForegroundColor Gray
             Write-Host "  [3] Exit" -ForegroundColor Gray
 
-            while ($true) {
+            $validSelection = $false
+            while (-not $validSelection) {
                 $choice = Read-Host "Select 1-3"
                 switch ($choice) {
                     '1' {
                         Invoke-DiskHealthWorkflow -WorkingRoot $workingRoot | Out-Null
-                        break
+                        $validSelection = $true
                     }
                     '2' {
                         Invoke-DiskHealthWorkflow -WorkingRoot $workingRoot -AttemptRepair | Out-Null
-                        break
+                        $validSelection = $true
                     }
                     '3' {
-                        break
+                        $validSelection = $true
                     }
                     default {
                         Write-Host "Invalid selection." -ForegroundColor Yellow
                     }
                 }
-                break
             }
 
             Write-Host ""

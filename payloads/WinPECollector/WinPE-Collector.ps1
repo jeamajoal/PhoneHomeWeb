@@ -2283,7 +2283,6 @@ function Main {
                         Write-Host "Invalid selection." -ForegroundColor Yellow
                     }
                 }
-                break
             }
 
             Write-Host ""

@@ -385,6 +385,56 @@ function Test-VolumeNeedsRepair {
 }
 
 function Invoke-DiskHealthWorkflow {
+    <#
+    .SYNOPSIS
+    Performs a comprehensive disk health assessment and optionally repairs detected issues.
+
+    .DESCRIPTION
+    This function generates a detailed disk health report that includes:
+    - Disk, partition, and volume information from PowerShell cmdlets and diskpart
+    - BitLocker encryption status via manage-bde
+    - Volume health checks using fsutil and chkdsk
+    
+    When the -AttemptRepair switch is enabled, the function provides an interactive workflow
+    that allows the user to:
+    - Review volumes flagged as needing repair
+    - Choose between fast repair (chkdsk /f) or deep scan (chkdsk /r)
+    - Optionally repair the EFI System Partition (FAT32)
+    
+    The function is designed for WinPE environments where user interaction is expected and
+    safe disk repair operations can be performed without data access conflicts.
+
+    .PARAMETER WorkingRoot
+    The root directory where the disk health report and temporary files will be saved.
+    Required. The report will be named "DiskHealthReport-{timestamp}.txt".
+
+    .PARAMETER AttemptRepair
+    Optional switch that enables the interactive repair workflow. When specified, the function
+    will prompt the user to choose repair options for any volumes flagged as needing repair.
+    Without this switch, the function only generates a report and identifies problem volumes.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs"
+    
+    Generates a disk health report in C:\WinPE-Logs without attempting any repairs.
+    Identifies and lists any volumes that need repair.
+
+    .EXAMPLE
+    Invoke-DiskHealthWorkflow -WorkingRoot "C:\WinPE-Logs" -AttemptRepair
+    
+    Generates a disk health report and then prompts the user with an interactive menu
+    to select repair options for any detected problem volumes. Supports fast repair (/f),
+    deep scan (/r), or cancellation. May also prompt for EFI partition repair.
+
+    .OUTPUTS
+    Boolean. Returns $true if the workflow completes successfully, $false otherwise.
+
+    .NOTES
+    - Uses Get-Volume, Get-Disk, Get-Partition, diskpart, manage-bde, fsutil, and chkdsk
+    - Interactive repair prompts require user input when -AttemptRepair is specified
+    - EFI repair temporarily assigns a drive letter to the EFI System Partition
+    - All repair output is appended to the disk health report file
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$WorkingRoot,
         [switch]$AttemptRepair

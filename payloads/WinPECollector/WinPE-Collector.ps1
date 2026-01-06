@@ -123,6 +123,43 @@ function Write-Section {
     Write-SessionLog ""
 }
 
+function Redact-BitLockerRecoveryKey {
+    <#
+    .SYNOPSIS
+        Redacts BitLocker recovery keys from text to prevent sensitive data exposure in logs.
+    .DESCRIPTION
+        This function identifies and redacts BitLocker numerical recovery passwords (48-digit keys
+        formatted as 8 groups of 6 digits) from command output or log text. It preserves the
+        structure and context of the output while replacing the actual key values with [REDACTED].
+    .PARAMETER Text
+        The text content that may contain BitLocker recovery keys to be redacted.
+    .EXAMPLE
+        $output = manage-bde -protectors -get C:
+        $safeOutput = Redact-BitLockerRecoveryKey -Text $output
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $Text
+    }
+
+    # Redact BitLocker numerical recovery passwords in standard format (8 groups of 6 digits with hyphens)
+    # Pattern: 123456-123456-123456-123456-123456-123456-123456-123456
+    $redacted = $Text -replace '\b\d{6}(-\d{6}){7}\b', '[REDACTED]'
+
+    # Redact recovery passwords in "Password:" lines from manage-bde output
+    $redacted = $redacted -replace '(?im)(^\s*Password\s*:\s*)\d{6}(-\d{6}){7}\s*$', '$1[REDACTED]'
+
+    # Redact recovery passwords that may appear without hyphens (48 consecutive digits)
+    $redacted = $redacted -replace '\b\d{48}\b', '[REDACTED]'
+
+    return $redacted
+}
+
 function Write-SessionLogSection {
     param(
         [Parameter(Mandatory = $true)][string]$Title
@@ -205,10 +242,10 @@ function Write-DriveHealthDiagnosticsToSessionLog {
     }
 
     Write-SessionLog "--- manage-bde -status ${dl}: ---"
-    Write-SessionLog (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status', "${dl}:"))
+    Write-SessionLog (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status', "${dl}:")))
 
     Write-SessionLog "--- manage-bde -protectors -get ${dl}: ---"
-    Write-SessionLog (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-protectors', '-get', "${dl}:"))
+    Write-SessionLog (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-protectors', '-get', "${dl}:")))
 
     if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
         try {
@@ -434,7 +471,7 @@ function Invoke-DiskHealthWorkflow {
 
     $lines += ""
     $lines += "=== BitLocker (manage-bde -status) ==="
-    $lines += (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status'))
+    $lines += (Redact-BitLockerRecoveryKey -Text (Invoke-ExternalCommandText -Exe 'manage-bde' -Args @('-status')))
 
     $problemVolumes = @()
     $vols = @()
@@ -668,7 +705,7 @@ function Save-SessionEnvironmentSnapshot {
         $lines += "=== BitLocker (manage-bde -status, best-effort) ==="
         try {
             if (Get-Command manage-bde -ErrorAction SilentlyContinue) {
-                $lines += (manage-bde -status 2>&1)
+                $lines += (Redact-BitLockerRecoveryKey -Text ((manage-bde -status 2>&1) | Out-String))
             }
             else {
                 $lines += "manage-bde not available in this WinPE image."
@@ -1170,6 +1207,7 @@ function Unlock-BitLockerDrive {
                         Write-LogMessage "Trying recovery key from file (redacted)" "Gray"
                         try {
                             $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
+                            $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                             
                             if ($result -match "successfully|unlocked") {
                                 Write-LogMessage "Drive $($DriveLetter): successfully unlocked with key from file!" "Green"
@@ -1227,6 +1265,7 @@ function Unlock-BitLockerDrive {
             try {
                 # Try using manage-bde (more reliable in WinPE)
                 $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
+                $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                 
                 if ($result -match "successfully|unlocked") {
                     Write-LogMessage "Drive $($DriveLetter): successfully unlocked!" "Green"
@@ -1244,7 +1283,7 @@ function Unlock-BitLockerDrive {
                 }
                 else {
                     Write-LogMessage "Failed to unlock drive. Invalid recovery key." "Red"
-                    Write-Host "Error: $result" -ForegroundColor Red
+                    Write-Host "Error: $(Redact-BitLockerRecoveryKey -Text $result)" -ForegroundColor Red
                 }
             }
             catch {
@@ -1704,6 +1743,7 @@ function Invoke-OfflineDiagnosticsCollection {
         
         # Use manage-bde to get status
         $manageBdeResult = manage-bde -status "$($DriveLetter):" 2>&1
+        $manageBdeResult = Redact-BitLockerRecoveryKey -Text ($manageBdeResult | Out-String)
         $blInfo += "manage-bde -status output:"
         $blInfo += $manageBdeResult
         $blInfo += ""

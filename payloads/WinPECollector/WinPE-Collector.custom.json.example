@@ -1,13 +1,99 @@
+// ==============================================================================
+// WinPE Collector Custom Configuration - Example Reference
+// ==============================================================================
+// This file contains example configurations with documentation.
+// 
+// For READY-TO-USE examples, see the 'examples/' subdirectory:
+//   - example1-org-folder-only.json
+//   - example2-extrafolders-only.json  
+//   - example3-org-and-extrafolders.json
+//   - example4-extrafolderpaths.json
+//   - example5-empty-config.json
+//
+// Copy one of those files to "WinPE-Collector.custom.json" and edit as needed.
+//
+// IMPORTANT: Standard JSON does NOT support // comments. These examples are
+// for documentation only. The files in examples/ are clean JSON without comments.
+// ==============================================================================
+
+// EXAMPLE 1: Collect only an organization's ProgramData folder
+// Use this when you only need to collect a single vendor/org-specific folder
+// from ProgramData (most common scenario)
+// ==============================================================================
 {
-  "orgProgramDataFolder": "My App",
-  "extraFolders": [
-    {
-      "name": "CustomLogs",
-      "path": "Users\\Public\\Documents\\MyLogs"
-    },
-    {
-      "name": "VendorTool",
-      "path": "ProgramData\\VendorTool"
-    }
-  ]
+  "orgProgramDataFolder": "My App"
 }
+
+// ==============================================================================
+// ALTERNATIVE EXAMPLES (see examples/ directory for ready-to-use versions):
+// ==============================================================================
+
+// EXAMPLE 2: Collect only specific custom folders (no org folder)
+// Use this when you need specific folders but NOT a ProgramData folder
+// ==============================================================================
+// {
+//   "extraFolders": [
+//     {
+//       "name": "CustomLogs",
+//       "path": "Users\\Public\\Documents\\MyLogs"
+//     },
+//     {
+//       "name": "AppData",
+//       "path": "Users\\Public\\AppData\\Local\\MyApp"
+//     }
+//   ]
+// }
+
+// EXAMPLE 3: Collect both org folder AND custom folders
+// Use this when you need multiple locations
+// ==============================================================================
+// {
+//   "orgProgramDataFolder": "My App",
+//   "extraFolders": [
+//     {
+//       "name": "CustomLogs",
+//       "path": "Users\\Public\\Documents\\MyLogs"
+//     },
+//     {
+//       "name": "VendorTool",
+//       "path": "ProgramData\\VendorTool"
+//     }
+//   ]
+// }
+
+// EXAMPLE 4: Use extraFolderPaths for simple path list (alternative syntax)
+// ==============================================================================
+// {
+//   "extraFolderPaths": [
+//     "Users\\Public\\Documents\\MyLogs",
+//     "ProgramData\\VendorTool\\Logs"
+//   ]
+// }
+
+// EXAMPLE 5: Empty/minimal config (collects nothing extra)
+// Use this to explicitly disable extra folder collection
+// ==============================================================================
+// {}
+
+// ==============================================================================
+// USAGE INSTRUCTIONS:
+// ==============================================================================
+// Option A (Recommended): Copy a ready-to-use example
+//   1. Go to the examples/ subdirectory
+//   2. Copy the example file that matches your needs
+//   3. Rename it to "WinPE-Collector.custom.json" 
+//   4. Edit the paths to match your requirements
+//
+// Option B: Create from this template
+//   1. Copy ONE of the examples above (without // comment lines)
+//   2. Save as "WinPE-Collector.custom.json"
+//   3. Customize the paths to match your needs
+//
+// All fields are OPTIONAL - only include what you need!
+//
+// IMPORTANT NOTES:
+// - All paths must be RELATIVE to the Windows drive root (no drive letters!)
+// - Use double backslashes (\\) in paths for proper JSON formatting
+// - The "name" field in extraFolders is optional - defaults to folder name
+// - You can mix orgProgramDataFolder with extraFolders or extraFolderPaths
+// ==============================================================================

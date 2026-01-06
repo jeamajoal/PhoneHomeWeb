@@ -1,0 +1,12 @@
+{
+  "extraFolders": [
+    {
+      "name": "CustomLogs",
+      "path": "Users\\Public\\Documents\\MyLogs"
+    },
+    {
+      "name": "AppData",
+      "path": "Users\\Public\\AppData\\Local\\MyApp"
+    }
+  ]
+}

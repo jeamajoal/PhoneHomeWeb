@@ -1,13 +1,73 @@
+// ==============================================================================
+// WinPE Collector Custom Configuration Examples
+// ==============================================================================
+// This file demonstrates various ways to configure custom folder collection.
+// Copy this file to "WinPE-Collector.custom.json" (without .example) and 
+// edit it to match your needs.
+//
+// All fields are OPTIONAL - only include what you need!
+// ==============================================================================
+
+// EXAMPLE 1: Collect only an organization's ProgramData folder
+// Use this when you only need to collect a single vendor/org-specific folder
+// from ProgramData (most common scenario)
+// ==============================================================================
 {
-  "orgProgramDataFolder": "My App",
-  "extraFolders": [
-    {
-      "name": "CustomLogs",
-      "path": "Users\\Public\\Documents\\MyLogs"
-    },
-    {
-      "name": "VendorTool",
-      "path": "ProgramData\\VendorTool"
-    }
-  ]
+  "orgProgramDataFolder": "My App"
 }
+
+// EXAMPLE 2: Collect only specific custom folders (no org folder)
+// Use this when you need specific folders but NOT a ProgramData folder
+// ==============================================================================
+// {
+//   "extraFolders": [
+//     {
+//       "name": "CustomLogs",
+//       "path": "Users\\Public\\Documents\\MyLogs"
+//     },
+//     {
+//       "name": "AppData",
+//       "path": "Users\\Public\\AppData\\Local\\MyApp"
+//     }
+//   ]
+// }
+
+// EXAMPLE 3: Collect both org folder AND custom folders
+// Use this when you need multiple locations
+// ==============================================================================
+// {
+//   "orgProgramDataFolder": "My App",
+//   "extraFolders": [
+//     {
+//       "name": "CustomLogs",
+//       "path": "Users\\Public\\Documents\\MyLogs"
+//     },
+//     {
+//       "name": "VendorTool",
+//       "path": "ProgramData\\VendorTool"
+//     }
+//   ]
+// }
+
+// EXAMPLE 4: Use extraFolderPaths for simple path list (alternative syntax)
+// ==============================================================================
+// {
+//   "extraFolderPaths": [
+//     "Users\\Public\\Documents\\MyLogs",
+//     "ProgramData\\VendorTool\\Logs"
+//   ]
+// }
+
+// EXAMPLE 5: Empty/minimal config (collects nothing extra)
+// Use this to explicitly disable extra folder collection
+// ==============================================================================
+// {}
+
+// ==============================================================================
+// NOTES:
+// - All paths must be RELATIVE to the Windows drive root (no drive letters!)
+// - Use double backslashes (\\) in paths for proper JSON formatting
+// - Only ONE example should be active (uncommented) at a time
+// - The "name" field in extraFolders is optional - defaults to folder name
+// - You can mix orgProgramDataFolder with extraFolders or extraFolderPaths
+// ==============================================================================

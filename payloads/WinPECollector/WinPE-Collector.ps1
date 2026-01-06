@@ -659,15 +659,55 @@ function Get-CollectorCustomConfig {
 
             $raw = Get-Content -Path $candidate -Raw -ErrorAction Stop
             if ([string]::IsNullOrWhiteSpace($raw)) {
+                Write-LogMessage "  Custom config file is empty: $candidate" "Yellow"
                 continue
             }
 
             # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
             $rawNorm = $raw -replace "\u0000", ""
             $rawNorm = $rawNorm.Trim([char]0xFEFF)
+            
+            # Additional normalization: remove line comments (// style) which are not valid JSON
+            # This helps users who may include comments in their config files
+            $lines = $rawNorm -split "`r?`n"
+            $cleanedLines = @()
+            foreach ($line in $lines) {
+                # Remove // comments but preserve URLs (http://, https://)
+                $trimmedLine = $line.Trim()
+                if ($trimmedLine -match '^//') {
+                    # Skip full-line comments
+                    continue
+                }
+                # Remove inline comments (but not in strings - simplified approach)
+                # This is not perfect but handles basic cases
+                if ($trimmedLine -notmatch '^\s*"' -and $trimmedLine -match '\s+//') {
+                    $line = $line -replace '\s+//.*$', ''
+                }
+                $cleanedLines += $line
+            }
+            $rawNorm = $cleanedLines -join "`n"
+            
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
             if ($null -eq $cfg) {
+                Write-LogMessage "  Custom config parsed as null: $candidate" "Yellow"
                 continue
+            }
+
+            # Validate the config has expected structure
+            $hasValidContent = $false
+            if ($cfg.PSObject.Properties.Match('orgProgramDataFolder').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($cfg.orgProgramDataFolder)) {
+                $hasValidContent = $true
+            }
+            if ($cfg.PSObject.Properties.Match('extraFolders').Count -gt 0 -and $cfg.extraFolders) {
+                $hasValidContent = $true
+            }
+            if ($cfg.PSObject.Properties.Match('extraFolderPaths').Count -gt 0 -and $cfg.extraFolderPaths) {
+                $hasValidContent = $true
+            }
+            
+            if (-not $hasValidContent) {
+                Write-LogMessage "  Custom config has no recognized settings (orgProgramDataFolder, extraFolders, or extraFolderPaths): $candidate" "Yellow" -LogOnly
+                # Still return it - empty config is valid
             }
 
             Write-LogMessage "  Loaded custom config: $candidate" "Gray" -LogOnly
@@ -692,12 +732,13 @@ function Get-CollectorCustomConfig {
                         $probe = $text.TrimStart()
                         if ($probe.StartsWith('<')) {
                             # Likely HTML from a 401/403/404 page saved as .json
+                            Write-LogMessage "  Custom config appears to be HTML (check server access): $candidate" "Yellow"
                             continue
                         }
 
                         $cfg2 = $text | ConvertFrom-Json -ErrorAction Stop
                         if ($null -ne $cfg2) {
-                            Write-LogMessage "  Loaded custom config: $candidate" "Gray" -LogOnly
+                            Write-LogMessage "  Loaded custom config (alternate encoding): $candidate" "Gray" -LogOnly
                             return $cfg2
                         }
                     }
@@ -715,6 +756,9 @@ function Get-CollectorCustomConfig {
                 $first = (Get-Content -Path $candidate -TotalCount 1 -ErrorAction SilentlyContinue)
                 if ($first -and ($first.TrimStart().StartsWith('<'))) {
                     $hint = " (file looks like HTML; check server auth/404 and that the download actually returned JSON)"
+                }
+                elseif ($first -and -not ($first.TrimStart().StartsWith('{'))) {
+                    $hint = " (file does not start with '{'; ensure it is valid JSON)"
                 }
             }
             catch {}
@@ -1258,9 +1302,14 @@ function Invoke-OfflineDiagnosticsCollection {
 
     $extraSpecs = New-Object System.Collections.Generic.List[object]
 
+    # Process orgProgramDataFolder from environment variable or JSON config
     $orgProgramDataFolder = $env:ORG_PROGRAMDATA_FOLDER
-    if ([string]::IsNullOrWhiteSpace($orgProgramDataFolder) -and $customConfig -and $customConfig.orgProgramDataFolder) {
-        $orgProgramDataFolder = [string]$customConfig.orgProgramDataFolder
+    if ([string]::IsNullOrWhiteSpace($orgProgramDataFolder) -and $customConfig) {
+        # Use safer property access pattern
+        if ($customConfig.PSObject.Properties.Match('orgProgramDataFolder').Count -gt 0 -and $customConfig.orgProgramDataFolder) {
+            $orgProgramDataFolder = [string]$customConfig.orgProgramDataFolder
+            Write-LogMessage "    Using orgProgramDataFolder from custom config: $orgProgramDataFolder" "Gray" -LogOnly
+        }
     }
     if (-not [string]::IsNullOrWhiteSpace($orgProgramDataFolder)) {
         $extraSpecs.Add([PSCustomObject]@{
@@ -1268,6 +1317,7 @@ function Invoke-OfflineDiagnosticsCollection {
                 RelativePath = "ProgramData\\$orgProgramDataFolder"
                 Source = "ORG_PROGRAMDATA_FOLDER"
             })
+        Write-LogMessage "    Added org folder: ProgramData\\$orgProgramDataFolder" "Gray" -LogOnly
     }
 
     # Parse env-based extras
@@ -1295,31 +1345,50 @@ function Invoke-OfflineDiagnosticsCollection {
 
     # Parse JSON config extras
     if ($customConfig) {
-        if ($customConfig.extraFolders) {
+        # Process extraFolders array (structured format with name and path)
+        if ($customConfig.PSObject.Properties.Match('extraFolders').Count -gt 0 -and $customConfig.extraFolders) {
             foreach ($item in @($customConfig.extraFolders)) {
                 try {
-                    $rel = if ($item.path) { [string]$item.path } else { $null }
-                    $name = if ($item.name) { [string]$item.name } else { (Split-Path $rel -Leaf) }
-                    if (-not [string]::IsNullOrWhiteSpace($rel)) {
-                        $extraSpecs.Add([PSCustomObject]@{ Name = $name; RelativePath = $rel; Source = "WinPE-Collector.custom.json" })
+                    # Safely extract properties from the item
+                    $rel = $null
+                    $name = $null
+                    
+                    if ($item.PSObject.Properties.Match('path').Count -gt 0 -and $item.path) {
+                        $rel = [string]$item.path
+                    }
+                    
+                    if ($item.PSObject.Properties.Match('name').Count -gt 0 -and $item.name) {
+                        $name = [string]$item.name
+                    } elseif (-not [string]::IsNullOrWhiteSpace($rel)) {
+                        $name = Split-Path $rel -Leaf
+                    }
+                    
+                    if (-not [string]::IsNullOrWhiteSpace($rel) -and -not [string]::IsNullOrWhiteSpace($name)) {
+                        $extraSpecs.Add([PSCustomObject]@{ Name = $name; RelativePath = $rel; Source = "WinPE-Collector.custom.json (extraFolders)" })
+                        Write-LogMessage "    Added extra folder: $name -> $rel" "Gray" -LogOnly
+                    } else {
+                        Write-LogMessage "    Skipped malformed extraFolders item (missing path or name)" "Yellow" -LogOnly
                     }
                 }
                 catch {
-                    # ignore malformed items
+                    Write-LogMessage "    Error processing extraFolders item: $($_.Exception.Message)" "Yellow" -LogOnly
                 }
             }
         }
 
-        if ($customConfig.extraFolderPaths) {
+        # Process extraFolderPaths array (simple path list)
+        if ($customConfig.PSObject.Properties.Match('extraFolderPaths').Count -gt 0 -and $customConfig.extraFolderPaths) {
             foreach ($rel in @($customConfig.extraFolderPaths)) {
                 try {
                     $r = [string]$rel
                     if (-not [string]::IsNullOrWhiteSpace($r)) {
-                        $extraSpecs.Add([PSCustomObject]@{ Name = (Split-Path $r -Leaf); RelativePath = $r; Source = "WinPE-Collector.custom.json" })
+                        $folderName = Split-Path $r -Leaf
+                        $extraSpecs.Add([PSCustomObject]@{ Name = $folderName; RelativePath = $r; Source = "WinPE-Collector.custom.json (extraFolderPaths)" })
+                        Write-LogMessage "    Added extra folder path: $folderName -> $r" "Gray" -LogOnly
                     }
                 }
                 catch {
-                    # ignore
+                    Write-LogMessage "    Error processing extraFolderPaths item: $($_.Exception.Message)" "Yellow" -LogOnly
                 }
             }
         }

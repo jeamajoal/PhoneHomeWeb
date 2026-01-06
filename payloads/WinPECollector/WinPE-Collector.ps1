@@ -1402,6 +1402,48 @@ function Unlock-BitLockerDrive {
     return $false
 }
 
+function Remove-BomCharacters {
+    <#
+    .SYNOPSIS
+        Removes Byte Order Mark (BOM) characters from a string.
+    .DESCRIPTION
+        Removes all U+FEFF (BOM) characters from the start and end of a string.
+        Handles multiple consecutive BOM characters if present.
+        Uses character-by-character comparison for cross-version PowerShell compatibility
+        (works in both Windows PowerShell 5.1 and PowerShell 7+).
+    .PARAMETER Text
+        The text string to process.
+    .OUTPUTS
+        String with all BOM characters removed from start and end.
+    .EXAMPLE
+        Remove-BomCharacters -Text "$bom{ `"test`": `"value`" }$bom"
+        Returns the JSON string without BOM characters at start or end.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+    
+    if ([string]::IsNullOrEmpty($Text)) {
+        return $Text
+    }
+    
+    $result = $Text
+    
+    # Remove BOM from start
+    while ($result.Length -gt 0 -and $result[0] -eq [char]0xFEFF) {
+        $result = $result.Substring(1)
+    }
+    
+    # Remove BOM from end
+    while ($result.Length -gt 0 -and $result[$result.Length - 1] -eq [char]0xFEFF) {
+        $result = $result.Substring(0, $result.Length - 1)
+    }
+    
+    return $result
+}
+
 function Get-CollectorCustomConfig {
     param(
         [Parameter(Mandatory = $true)][string[]]$SearchRoots
@@ -1428,7 +1470,7 @@ function Get-CollectorCustomConfig {
 
             # Normalize common encoding artifacts (BOM, NULs) that can break ConvertFrom-Json in some WinPE builds.
             $rawNorm = $raw -replace "\u0000", ""
-            $rawNorm = $rawNorm.Trim([char]0xFEFF)
+            $rawNorm = Remove-BomCharacters -Text $rawNorm
             
             # Parse JSON (Note: PowerShell Core 7.x supports // comments, but Windows PowerShell 5.1 does not)
             $cfg = $rawNorm | ConvertFrom-Json -ErrorAction Stop
@@ -1471,7 +1513,8 @@ function Get-CollectorCustomConfig {
                 foreach ($enc in $decoders) {
                     try {
                         $text = $enc.GetString($bytes)
-                        $text = ($text -replace "\u0000", "").Trim([char]0xFEFF)
+                        $text = $text -replace "\u0000", ""
+                        $text = Remove-BomCharacters -Text $text
                         if ([string]::IsNullOrWhiteSpace($text)) { continue }
 
                         $probe = $text.TrimStart()
@@ -1505,10 +1548,16 @@ function Get-CollectorCustomConfig {
                 elseif ($first -and -not ($first.TrimStart().StartsWith('{'))) {
                     $hint = " (file does not start with '{'; ensure it is valid JSON)"
                 }
+                else {
+                    # Provide more context about the error
+                    $hint = " (JSON syntax error or encoding issue)"
+                }
             }
             catch {}
 
             Write-LogMessage "  Custom config found but could not be read/parsed ($candidate): $($_.Exception.Message)$hint" "Yellow"
+            Write-LogMessage "    Exception type: $($_.Exception.GetType().FullName)" "Gray" -LogOnly
+            Write-LogMessage "    Try validating the JSON with: Get-Content -Path '$candidate' -Raw | ConvertFrom-Json" "Gray" -LogOnly
         }
     }
 

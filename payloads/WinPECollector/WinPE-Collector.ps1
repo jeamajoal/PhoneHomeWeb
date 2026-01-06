@@ -411,6 +411,7 @@ function Get-ThumbDriveRoot {
 }
 
 function Test-VolumeNeedsRepair {
+    [OutputType([System.Boolean])]
     <#
     .SYNOPSIS
         Validates if a volume object indicates filesystem health issues that may require repair.
@@ -462,6 +463,7 @@ function Test-VolumeNeedsRepair {
 }
 
 function Invoke-DiskHealthWorkflow {
+    [OutputType([System.Boolean])]
     <#
     .SYNOPSIS
     Performs a comprehensive disk health assessment and optionally repairs detected issues.

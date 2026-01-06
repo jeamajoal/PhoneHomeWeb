@@ -2394,9 +2394,9 @@ function Main {
             }
 
             Write-Host "" 
-            Write-Host "Options:" -ForegroundColor Cyan
-            Write-Host "  [1] Generate disk health report" -ForegroundColor Gray
-            Write-Host "  [2] Generate report + attempt repairs" -ForegroundColor Gray
+            Write-Host "Post-unlock options:" -ForegroundColor Cyan
+            Write-Host "  [1] Generate post-unlock disk health report (no changes made)" -ForegroundColor Gray
+            Write-Host "  [2] Generate post-unlock report and attempt repairs on detected issues" -ForegroundColor Gray
             Write-Host "  [3] Exit" -ForegroundColor Gray
 
             $validSelection = $false

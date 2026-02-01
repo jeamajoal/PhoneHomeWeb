@@ -1313,7 +1313,7 @@ function Unlock-BitLockerDrive {
                             $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                             
                             # Check for successful unlock - must not match "already unlocked" error messages
-                            if ($result -match "(?i)success(fully?)?" -and $result -notmatch "(?i)(already|error|fail)") {
+                            if ($result -match "(?i)success(ful(ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                                 Write-LogMessage "Drive $($DriveLetter): successfully unlocked with key from file!" "Green"
 
                                 # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
@@ -1372,7 +1372,7 @@ function Unlock-BitLockerDrive {
                 $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                 
                 # Check for successful unlock - must not match "already unlocked" error messages
-                if ($result -match "(?i)success(fully?)?" -and $result -notmatch "(?i)(already|error|fail)") {
+                if ($result -match "(?i)success(ful(ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                     Write-LogMessage "Drive $($DriveLetter): successfully unlocked!" "Green"
 
                     # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.

@@ -9,7 +9,7 @@
     "rootPath": "C:\\",
     "outputPath": ".",
     "uploadResults": false,
-    "includeSubdirectories": true
+    "noRecurse": false
   },
   "parameters": {
     "ServerUrl": {
@@ -42,11 +42,11 @@
       "required": false,
       "default": false
     },
-    "IncludeSubdirectories": {
-      "description": "Recursively scan subdirectories",
+    "NoRecurse": {
+      "description": "Disable recursive subdirectory scanning",
       "type": "switch",
       "required": false,
-      "default": true
+      "default": false
     }
   }
 }

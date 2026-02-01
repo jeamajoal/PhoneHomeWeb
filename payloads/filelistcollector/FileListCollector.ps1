@@ -24,14 +24,14 @@
 .PARAMETER UploadResults
     Switch to enable uploading the results to the server
 
-.PARAMETER IncludeSubdirectories
-    Switch to recursively scan subdirectories (default: true)
+.PARAMETER NoRecurse
+    If specified, only scans the root directory without recursing into subdirectories (default: false, meaning it recurses by default)
 
 .EXAMPLE
     .\FileListCollector.ps1 -RootPath "C:\" -OutputPath "C:\Temp"
     
 .EXAMPLE
-    .\FileListCollector.ps1 -RootPath "C:\Users" -ServerUrl "http://server:3500" -AuthKey "mykey" -UploadResults
+    .\FileListCollector.ps1 -RootPath "C:\Program Files" -NoRecurse
 
 .NOTES
     Author: PhoneHomeWeb Contributors
@@ -53,11 +53,14 @@ param(
     [string]$OutputPath = ".",
     
     [Parameter(Mandatory = $false)]
-    [switch]$UploadResults = $false,
+    [switch]$UploadResults,
     
     [Parameter(Mandatory = $false)]
-    [switch]$IncludeSubdirectories = $true
+    [switch]$NoRecurse
 )
+
+# By default, include subdirectories unless -NoRecurse is specified
+$IncludeSubdirectories = -not $NoRecurse
 
 $ErrorActionPreference = "Continue"
 
@@ -133,23 +136,39 @@ Format: Mode | LastWriteTime | Length | Name
     Write-ColorMessage "`n[2/2] Collecting dir /s /b format (bare recursive listing)..." "Yellow"
     
     try {
+        $onWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
+        $method = if ($onWindows) { "cmd.exe dir /s /b" } else { "Get-ChildItem (bare format)" }
+        
         $header = @"
 Directory Listing (Bare Format)
 Computer: $computerName
 Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Root Path: $Path
-Method: cmd.exe dir /s /b
+Method: $method
 
 =============================================================================
 
 "@
         $header | Out-File -FilePath $dirOutputFile -Encoding UTF8
         
-        # Use cmd.exe to run dir command for compatibility
-        if ($IncludeSubdirectories) {
-            cmd.exe /c "dir `"$Path`" /s /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+        if ($onWindows) {
+            # Use cmd.exe to run dir command for Windows compatibility
+            if ($IncludeSubdirectories) {
+                cmd.exe /c "dir `"$Path`" /s /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            } else {
+                cmd.exe /c "dir `"$Path`" /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            }
         } else {
-            cmd.exe /c "dir `"$Path`" /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            # Fallback to PowerShell for non-Windows systems
+            if ($IncludeSubdirectories) {
+                Get-ChildItem -Path $Path -Recurse -Force -ErrorAction SilentlyContinue | 
+                    Select-Object -ExpandProperty FullName | 
+                    Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            } else {
+                Get-ChildItem -Path $Path -Force -ErrorAction SilentlyContinue | 
+                    Select-Object -ExpandProperty FullName | 
+                    Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            }
         }
         
         $dirSize = (Get-Item $dirOutputFile).Length

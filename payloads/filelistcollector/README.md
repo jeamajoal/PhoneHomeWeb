@@ -36,7 +36,7 @@ Collect file listings from C:\ and save to current directory:
 ### Non-Recursive Scan
 
 ```powershell
-.\FileListCollector.ps1 -RootPath "C:\Program Files" -IncludeSubdirectories:$false
+.\FileListCollector.ps1 -RootPath "C:\Program Files" -NoRecurse
 ```
 
 ## Parameters
@@ -48,7 +48,7 @@ Collect file listings from C:\ and save to current directory:
 | `RootPath` | Root directory to scan | `C:\` | No |
 | `OutputPath` | Directory for output files | `.` (current) | No |
 | `UploadResults` | Upload results to server | `$false` | No |
-| `IncludeSubdirectories` | Recursive scan | `$true` | No |
+| `NoRecurse` | Disable recursive subdirectory scan | `$false` (recurses by default) | No |
 
 ## Output Files
 
@@ -139,7 +139,7 @@ Example:
 
 - Large directories (entire C:\) may take several minutes
 - Output file size depends on number of files scanned
-- Consider using `-IncludeSubdirectories:$false` for faster scans of large trees
+- Consider using `-NoRecurse` for faster scans of large trees
 
 ## Requirements
 
@@ -164,8 +164,7 @@ Example:
     -AuthKey "my-secret-key" `
     -RootPath "C:\Users\JohnDoe\Documents" `
     -OutputPath "C:\Diagnostics\Output" `
-    -UploadResults `
-    -IncludeSubdirectories
+    -UploadResults
 ```
 
 ## Troubleshooting
@@ -176,7 +175,7 @@ Run PowerShell as Administrator to access protected directories.
 
 ### Large Output Files
 
-Use `-IncludeSubdirectories:$false` or scan smaller directory trees.
+Use `-NoRecurse` or scan smaller directory trees.
 
 ### Upload Failures
 

@@ -124,13 +124,23 @@ bye
         # OpenSSH sftp doesn't support password on command line for security reasons
         # We'll use sshpass if available on Linux, or prompt on Windows
         
+        $sftpOutFile = $null
+        $sftpErrFile = $null
+        
         if ($SftpPassword -and $SftpPassword -ne "<<SFTPPASSWORD>>") {
             # Check for sshpass (Linux/WSL)
             $sshpass = Get-Command sshpass -ErrorAction SilentlyContinue
             if ($sshpass) {
+                Write-ColorMessage "Warning: Using password authentication. For better security, consider SSH key authentication." "Yellow"
+                $sftpOutFile = [System.IO.Path]::GetTempFileName()
+                $sftpErrFile = [System.IO.Path]::GetTempFileName()
                 $env:SSHPASS = $SftpPassword
-                $process = Start-Process -FilePath "sshpass" -ArgumentList (@("-e", "sftp") + $sftpArgs) -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\sftp_out.txt" -RedirectStandardError "$env:TEMP\sftp_err.txt"
-                $env:SSHPASS = $null
+                try {
+                    $process = Start-Process -FilePath "sshpass" -ArgumentList (@("-e", "sftp") + $sftpArgs) -Wait -NoNewWindow -PassThru -RedirectStandardOutput $sftpOutFile -RedirectStandardError $sftpErrFile
+                }
+                finally {
+                    $env:SSHPASS = $null
+                }
             } else {
                 Write-ColorMessage "Note: Password authentication requires manual entry or sshpass utility." "Yellow"
                 Write-ColorMessage "For automated uploads, consider using SSH key authentication (-SftpKeyFile)." "Yellow"
@@ -159,6 +169,13 @@ bye
         # Clean up batch file
         if (Test-Path $batchFile) {
             Remove-Item $batchFile -Force -ErrorAction SilentlyContinue
+        }
+        # Clean up output files
+        if ($sftpOutFile -and (Test-Path $sftpOutFile)) {
+            Remove-Item $sftpOutFile -Force -ErrorAction SilentlyContinue
+        }
+        if ($sftpErrFile -and (Test-Path $sftpErrFile)) {
+            Remove-Item $sftpErrFile -Force -ErrorAction SilentlyContinue
         }
     }
 }

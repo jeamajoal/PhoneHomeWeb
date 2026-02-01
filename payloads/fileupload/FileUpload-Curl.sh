@@ -69,8 +69,8 @@ fi
 
 # Get system info for filename prefix
 HOSTNAME=$(hostname 2>/dev/null || echo "unknown")
-# Try to get serial number (Linux-specific, fallback to empty)
-SERIAL_NUMBER=$(sudo dmidecode -s system-serial-number 2>/dev/null || cat /sys/class/dmi/id/product_serial 2>/dev/null || echo "")
+# Try to get serial number (non-privileged methods only, fallback to empty)
+SERIAL_NUMBER=$(cat /sys/class/dmi/id/product_serial 2>/dev/null || echo "")
 
 # Build upload URL
 UPLOAD_URL="${SERVER_URL}/upload"

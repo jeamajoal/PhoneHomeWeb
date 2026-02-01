@@ -132,6 +132,19 @@ function Upload-ViaHTTPS {
     
     Write-ColorMessage "Preparing upload..." "Yellow"
     
+    # Warn about insecure HTTP connections
+    if ($ServerUrl -match "^http://" -and $ServerUrl -notmatch "^http://localhost" -and $ServerUrl -notmatch "^http://127\.0\.0\.1") {
+        Write-ColorMessage "" "Yellow"
+        Write-ColorMessage "WARNING: You are using an unencrypted HTTP connection!" "Red"
+        Write-ColorMessage "Your authentication key and file contents may be visible to others on the network." "Yellow"
+        Write-ColorMessage "For secure transfers, use HTTPS (https://) instead." "Yellow"
+        Write-ColorMessage "" "Yellow"
+        $continue = Read-Host "Do you want to continue anyway? (Y/N)"
+        if ($continue -ne 'Y' -and $continue -ne 'y') {
+            throw "Upload cancelled by user due to security warning."
+        }
+    }
+    
     $uploadUrl = "$ServerUrl/upload"
     
     # Get system info for filename prefix

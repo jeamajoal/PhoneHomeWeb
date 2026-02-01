@@ -908,6 +908,13 @@ function Wait-ForNetwork {
 }
 
 function Test-ServerPort {
+    <#
+    .SYNOPSIS
+        Simple boolean connectivity test (backward compatible).
+    .DESCRIPTION
+        Returns $true if server is reachable, $false otherwise.
+        For detailed diagnostics, use Test-ServerConnectivity instead.
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [int]$TimeoutMs = 2500
@@ -2566,6 +2573,7 @@ function Send-DiagnosticsPackage {
             if ($uploadResult.StatusCode) {
                 Write-LogMessage "  HTTP Status: $($uploadResult.StatusCode) $($uploadResult.StatusDescription)" "Gray"
             }
+            Write-LogMessage "  Local copy saved to: $ZipPath" "Gray"
             return $true
         }
 

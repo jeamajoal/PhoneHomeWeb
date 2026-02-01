@@ -1,0 +1,52 @@
+{
+  "name": "FileListCollector",
+  "version": "1.0.0",
+  "description": "Collects file system listings with last modified dates in two formats: Get-ChildItem (detailed) and dir /s /b (bare recursive)",
+  "author": "PhoneHomeWeb Contributors",
+  "license": "MIT",
+  "defaultSettings": {
+    "serverUrl": "http://localhost:3500",
+    "rootPath": "C:\\",
+    "outputPath": ".",
+    "uploadResults": false,
+    "includeSubdirectories": true
+  },
+  "parameters": {
+    "ServerUrl": {
+      "description": "Base URL of the PhoneHomeWeb upload server",
+      "type": "string",
+      "required": false,
+      "default": "<<SERVERURL>>"
+    },
+    "AuthKey": {
+      "description": "Authentication key for server uploads",
+      "type": "string",
+      "required": false,
+      "default": "<<AUTHKEY>>"
+    },
+    "RootPath": {
+      "description": "Root directory to scan",
+      "type": "string",
+      "required": false,
+      "default": "C:\\"
+    },
+    "OutputPath": {
+      "description": "Directory where output files will be saved",
+      "type": "string",
+      "required": false,
+      "default": "."
+    },
+    "UploadResults": {
+      "description": "Upload collected files to server",
+      "type": "switch",
+      "required": false,
+      "default": false
+    },
+    "IncludeSubdirectories": {
+      "description": "Recursively scan subdirectories",
+      "type": "switch",
+      "required": false,
+      "default": true
+    }
+  }
+}

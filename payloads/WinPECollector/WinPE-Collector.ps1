@@ -2596,7 +2596,17 @@ function Main {
             $tempHive = "HKLM\WinPE_System_$(Get-Random)"
             reg load $tempHive $systemPath 2>&1 | Out-Null
             
-            $computerName = (Get-ItemProperty -Path "$tempHive\ControlSet001\Control\ComputerName\ComputerName" -Name ComputerName -ErrorAction SilentlyContinue).ComputerName
+            # Get the current control set number
+            $currentControlSet = (Get-ItemProperty -Path "$tempHive\Select" -Name Current -ErrorAction SilentlyContinue).Current
+            if ($currentControlSet) {
+                $controlSetPath = "ControlSet" + ("{0:D3}" -f $currentControlSet)
+                $computerName = (Get-ItemProperty -Path "$tempHive\$controlSetPath\Control\ComputerName\ComputerName" -Name ComputerName -ErrorAction SilentlyContinue).ComputerName
+            }
+            
+            # Fallback to ControlSet001 if we couldn't determine the current control set
+            if (-not $computerName) {
+                $computerName = (Get-ItemProperty -Path "$tempHive\ControlSet001\Control\ComputerName\ComputerName" -Name ComputerName -ErrorAction SilentlyContinue).ComputerName
+            }
             
             [gc]::Collect()
             Start-Sleep -Milliseconds 500

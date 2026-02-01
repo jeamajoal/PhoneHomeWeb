@@ -402,11 +402,13 @@ apt-get install -y --no-install-recommends \
     rsync \
     zip \
     unzip \
+    p7zip-full \
     less \
     vim-tiny \
     nano \
     tmux \
     htop \
+    iotop \
     sysstat
 
 # Clean up

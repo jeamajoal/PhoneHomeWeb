@@ -957,6 +957,14 @@ function Test-ServerConnectivity {
     try {
         $uri = [Uri]$Url
         $result.Host = $uri.Host
+        
+        # Validate host is not empty
+        if ([string]::IsNullOrWhiteSpace($result.Host)) {
+            $result.Reason = "Invalid URL format - no host specified: $Url"
+            $result.ErrorCode = "InvalidUrl"
+            return $result
+        }
+        
         $result.Port = if ($uri.IsDefaultPort) {
             if ($uri.Scheme -eq 'https') { 443 } elseif ($uri.Scheme -eq 'http') { 80 } else { $uri.Port }
         } else {

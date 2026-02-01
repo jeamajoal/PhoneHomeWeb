@@ -1971,7 +1971,7 @@ function Invoke-OfflineDiagnosticsCollection {
                     $bcdInfo += ""
                 }
                 catch {
-                    $bcdInfo += "ERROR reading BCD store at $bcdStorePath : $($_.Exception.Message)"
+                    $bcdInfo += "ERROR reading BCD store at $bcdStorePath: $($_.Exception.Message)"
                     $bcdInfo += ""
                 }
             }

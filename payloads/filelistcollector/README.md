@@ -144,7 +144,7 @@ Example:
 ## Requirements
 
 - PowerShell 5.1 or later
-- Windows operating system
+- Windows, Linux, or macOS operating system (cross-platform compatible)
 - Network connectivity (only if using `-UploadResults`)
 - Read permissions on target directories
 

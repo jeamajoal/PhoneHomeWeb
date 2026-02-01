@@ -204,7 +204,11 @@ function Upload-File {
         
         try {
             $httpClient = [System.Net.Http.HttpClient]::new()
-            [void]$httpClient.DefaultRequestHeaders.Add("X-Auth-Key", $AuthKey)
+            
+            # Add auth header - use TryAddWithoutValidation to avoid exceptions if header already exists
+            if (-not [string]::IsNullOrEmpty($AuthKey)) {
+                [void]$httpClient.DefaultRequestHeaders.TryAddWithoutValidation("X-Auth-Key", $AuthKey)
+            }
             
             $content = [System.Net.Http.MultipartFormDataContent]::new()
             $fileStream = [System.IO.File]::OpenRead($FilePath)

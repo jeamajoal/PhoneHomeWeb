@@ -704,7 +704,7 @@ app.get("/fileupload", (req, res) => {
     try {
         const installerPath = path.join(
             payloadsDir,
-            "FileUpload",
+            "fileupload",
             "FileUpload.ps1"
         );
         

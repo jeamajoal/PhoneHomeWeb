@@ -1927,6 +1927,69 @@ function Invoke-OfflineDiagnosticsCollection {
         $collectionInfo += "BitLocker Status: ERROR - $($_.Exception.Message)"
     }
     
+    # 7b. Collect Boot Configuration Data (BCD) information
+    Write-LogMessage "  Collecting BCD information..." "Gray"
+    try {
+        $bcdInfo = @()
+        $bcdInfo += $Divider
+        $bcdInfo += "BOOT CONFIGURATION DATA (BCD) - OFFLINE COLLECTION"
+        $bcdInfo += $Divider
+        $bcdInfo += ""
+        
+        # Collect WinPE BCD (current environment)
+        $bcdInfo += "=== WinPE BCD (current environment) ==="
+        $bcdInfo += ""
+        try {
+            $winpeBcd = bcdedit /enum /all 2>&1
+            $bcdInfo += ($winpeBcd | Out-String)
+        }
+        catch {
+            $bcdInfo += "ERROR collecting WinPE BCD: $($_.Exception.Message)"
+        }
+        $bcdInfo += ""
+        
+        # Collect offline Windows BCD store
+        $bcdInfo += "=== Offline Windows BCD Store ==="
+        $bcdInfo += ""
+        
+        # Try common BCD store locations
+        $bcdStorePaths = @(
+            "$basePath\Boot\BCD",
+            "$basePath\EFI\Microsoft\Boot\BCD"
+        )
+        
+        $bcdStoreFound = $false
+        foreach ($bcdStorePath in $bcdStorePaths) {
+            if (Test-Path $bcdStorePath) {
+                $bcdStoreFound = $true
+                $bcdInfo += "BCD Store Location: $bcdStorePath"
+                $bcdInfo += ""
+                
+                try {
+                    $offlineBcd = bcdedit /store $bcdStorePath /enum /all 2>&1
+                    $bcdInfo += ($offlineBcd | Out-String)
+                    $bcdInfo += ""
+                }
+                catch {
+                    $bcdInfo += "ERROR reading BCD store at $bcdStorePath : $($_.Exception.Message)"
+                    $bcdInfo += ""
+                }
+            }
+        }
+        
+        if (-not $bcdStoreFound) {
+            $bcdInfo += "No BCD store found in standard locations (Boot\BCD, EFI\Microsoft\Boot\BCD)"
+        }
+        
+        $bcdInfo | Out-File (Join-Path $systemInfoDir "BCD_Configuration.txt")
+        $collectionInfo += "BCD Configuration: Collected"
+        Write-LogMessage "  BCD information collected" "Green"
+    }
+    catch {
+        $collectionInfo += "BCD Configuration: ERROR - $($_.Exception.Message)"
+        Write-LogMessage "  Error collecting BCD information: $($_.Exception.Message)" "Yellow"
+    }
+    
     # 8. Collect Windows version information
     Write-LogMessage "  Collecting Windows version information..." "Gray"
     try {

@@ -2598,7 +2598,7 @@ function Main {
             
             # Get the current control set number
             $currentControlSet = (Get-ItemProperty -Path "$tempHive\Select" -Name Current -ErrorAction SilentlyContinue).Current
-            if ($currentControlSet) {
+            if ($currentControlSet -and $currentControlSet -ge 1 -and $currentControlSet -le 999) {
                 $controlSetPath = "ControlSet" + ("{0:D3}" -f $currentControlSet)
                 $computerName = (Get-ItemProperty -Path "$tempHive\$controlSetPath\Control\ComputerName\ComputerName" -Name ComputerName -ErrorAction SilentlyContinue).ComputerName
             }

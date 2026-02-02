@@ -69,55 +69,26 @@ See `payloads/WinPECollector/README.md` for:
 - running the collector
 - optional customization via a drop-in JSON file
 
+#### Upload Methods
+
+The WinPE Collector supports multiple upload methods. If the primary HTTPS upload fails, an interactive menu offers alternative options:
+
+- **HTTPS Upload** - Direct upload to PhoneHomeWeb server (default)
+- **FTP Upload** - Upload to any FTP server
+- **SFTP Upload** - Secure upload via SSH/SFTP (uses OpenSSH, built into Windows 10+)
+- **Network Share** - Copy to a UNC path (e.g., `\\server\share\uploads`)
+
 ### File Upload payload
 
-Multiple upload methods are available in `payloads/fileupload/`:
+`payloads/fileupload/FileUpload.ps1` uploads a file to:
 
-#### HTTPS Upload (PowerShell) - Recommended
+- `POST <ServerUrl>/upload`
 
-`FileUpload.ps1` uploads a file directly to the server using HTTPS:
+Example:
 
 ```powershell
 .\payloads\fileupload\FileUpload.ps1 -ServerUrl "http://localhost:3500" -FilePath "C:\temp\example.zip" -AuthKey "<your key>"
 ```
-
-#### HTTPS Upload (curl/Bash) - Linux/macOS/WSL
-
-`FileUpload-Curl.sh` provides cross-platform upload via curl:
-
-```bash
-./payloads/fileupload/FileUpload-Curl.sh -s "http://localhost:3500" -f "/path/to/file.zip" -k "<your key>"
-```
-
-#### FTP Upload
-
-`FileUpload-FTP.ps1` uploads to an FTP server:
-
-```powershell
-.\payloads\fileupload\FileUpload-FTP.ps1 -FtpServer "ftp.example.com" -FtpUsername "user" -FtpPassword "pass" -FilePath "C:\temp\example.zip"
-```
-
-#### SFTP Upload
-
-`FileUpload-SFTP.ps1` uploads via SFTP (uses OpenSSH, built into Windows 10+):
-
-```powershell
-.\payloads\fileupload\FileUpload-SFTP.ps1 -SftpServer "sftp.example.com" -SftpUsername "user" -SftpKeyFile "~/.ssh/id_rsa" -FilePath "C:\temp\example.zip"
-```
-
-#### Tech-Assisted Upload (Interactive)
-
-`FileUpload-TechAssist.ps1` provides a guided, interactive upload experience for tech support scenarios:
-
-```powershell
-.\payloads\fileupload\FileUpload-TechAssist.ps1
-```
-
-Features:
-- GUI file picker
-- Step-by-step instructions
-- Multiple transfer options (HTTPS, network share, manual instructions)
-- Designed for technician-assisted remote support
 
 ## Deployment (Debian)
 

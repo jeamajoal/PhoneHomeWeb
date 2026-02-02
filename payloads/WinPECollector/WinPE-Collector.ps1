@@ -2278,6 +2278,265 @@ function Invoke-MultipartFileUpload {
     }
 }
 
+# FTP upload function
+function Invoke-FTPUpload {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$FtpServer,
+        [Parameter(Mandatory = $true)][string]$FtpUsername,
+        [Parameter(Mandatory = $true)][string]$FtpPassword,
+        [string]$RemotePath = "/"
+    )
+
+    try {
+        $fileName = Split-Path $FilePath -Leaf
+        $ftpUri = "ftp://${FtpServer}${RemotePath}${fileName}"
+        
+        Write-LogMessage "Uploading to FTP: $ftpUri" "Gray"
+        
+        $ftpRequest = [System.Net.FtpWebRequest]::Create($ftpUri)
+        $ftpRequest.Method = [System.Net.WebRequestMethods+Ftp]::UploadFile
+        $ftpRequest.Credentials = New-Object System.Net.NetworkCredential($FtpUsername, $FtpPassword)
+        $ftpRequest.UseBinary = $true
+        $ftpRequest.UsePassive = $true
+        $ftpRequest.KeepAlive = $false
+        $ftpRequest.Timeout = 1800000 # 30 minutes
+
+        $fileContent = [System.IO.File]::ReadAllBytes($FilePath)
+        $ftpRequest.ContentLength = $fileContent.Length
+
+        $requestStream = $ftpRequest.GetRequestStream()
+        try {
+            $requestStream.Write($fileContent, 0, $fileContent.Length)
+        }
+        finally {
+            $requestStream.Close()
+        }
+
+        $ftpResponse = $ftpRequest.GetResponse()
+        $statusDescription = $ftpResponse.StatusDescription
+        $ftpResponse.Close()
+
+        Write-LogMessage "FTP upload successful: $statusDescription" "Green"
+        return $true
+    }
+    catch {
+        Write-LogMessage "FTP upload failed: $($_.Exception.Message)" "Red"
+        return $false
+    }
+}
+
+# SFTP upload function (uses OpenSSH sftp client)
+function Invoke-SFTPUpload {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$SftpServer,
+        [Parameter(Mandatory = $true)][string]$SftpUsername,
+        [string]$SftpKeyFile = "",
+        [int]$SftpPort = 22,
+        [string]$RemotePath = "/upload/"
+    )
+
+    try {
+        $fileName = Split-Path $FilePath -Leaf
+        
+        # Check for OpenSSH sftp client
+        $sftpPath = $null
+        $opensshSftp = "$env:SystemRoot\System32\OpenSSH\sftp.exe"
+        if (Test-Path $opensshSftp) {
+            $sftpPath = $opensshSftp
+        }
+        if (-not $sftpPath) {
+            $sftpInPath = Get-Command sftp -ErrorAction SilentlyContinue
+            if ($sftpInPath) {
+                $sftpPath = $sftpInPath.Source
+            }
+        }
+
+        if (-not $sftpPath) {
+            Write-LogMessage "SFTP client not found. OpenSSH must be installed." "Red"
+            return $false
+        }
+
+        Write-LogMessage "Using SFTP client: $sftpPath" "Gray"
+        Write-LogMessage "Uploading to SFTP: ${SftpServer}:${RemotePath}${fileName}" "Gray"
+
+        # Create batch file for SFTP commands
+        $batchFile = [System.IO.Path]::GetTempFileName()
+        $batchContent = @"
+cd $RemotePath
+put "$FilePath" "$fileName"
+bye
+"@
+        Set-Content -Path $batchFile -Value $batchContent -Encoding ASCII
+
+        try {
+            $sftpArgs = @("-P", $SftpPort.ToString(), "-oBatchMode=no", "-oStrictHostKeyChecking=accept-new")
+            
+            if ($SftpKeyFile -and (Test-Path $SftpKeyFile)) {
+                $sftpArgs += @("-i", $SftpKeyFile)
+            }
+            
+            $sftpArgs += @("-b", $batchFile, "${SftpUsername}@${SftpServer}")
+
+            $process = Start-Process -FilePath $sftpPath -ArgumentList $sftpArgs -Wait -NoNewWindow -PassThru
+
+            if ($process.ExitCode -eq 0) {
+                Write-LogMessage "SFTP upload successful!" "Green"
+                return $true
+            } else {
+                Write-LogMessage "SFTP upload failed with exit code: $($process.ExitCode)" "Red"
+                return $false
+            }
+        }
+        finally {
+            if (Test-Path $batchFile) {
+                Remove-Item $batchFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    catch {
+        Write-LogMessage "SFTP upload failed: $($_.Exception.Message)" "Red"
+        return $false
+    }
+}
+
+# Copy to network share function
+function Copy-ToNetworkShare {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$SharePath
+    )
+
+    try {
+        if (-not (Test-Path $SharePath)) {
+            Write-LogMessage "Cannot access network share: $SharePath" "Red"
+            return $false
+        }
+
+        $fileName = Split-Path $FilePath -Leaf
+        $destPath = Join-Path $SharePath $fileName
+
+        Write-LogMessage "Copying to network share: $destPath" "Gray"
+        Copy-Item -Path $FilePath -Destination $destPath -Force
+        
+        if (Test-Path $destPath) {
+            Write-LogMessage "File copied successfully to network share!" "Green"
+            return $true
+        } else {
+            Write-LogMessage "Copy to network share failed - file not found at destination." "Red"
+            return $false
+        }
+    }
+    catch {
+        Write-LogMessage "Copy to network share failed: $($_.Exception.Message)" "Red"
+        return $false
+    }
+}
+
+# Interactive upload method selector
+function Select-UploadMethod {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [string]$UploadUrl = "",
+        [string]$AuthKey = ""
+    )
+
+    $fileName = Split-Path $ZipPath -Leaf
+    $fileSize = [Math]::Round((Get-Item $ZipPath).Length / 1MB, 2)
+    
+    while ($true) {
+        Write-Host ""
+        Write-Host $Divider -ForegroundColor Cyan
+        Write-Host "  UPLOAD METHOD SELECTION" -ForegroundColor Cyan
+        Write-Host $Divider -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  File: $fileName ($fileSize MB)" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  Available upload methods:" -ForegroundColor Yellow
+        Write-Host "  [1] HTTPS Upload (to PhoneHomeWeb server)" -ForegroundColor Gray
+        Write-Host "  [2] FTP Upload" -ForegroundColor Gray
+        Write-Host "  [3] SFTP Upload (secure)" -ForegroundColor Gray
+        Write-Host "  [4] Copy to Network Share (UNC path)" -ForegroundColor Gray
+        Write-Host "  [5] Skip upload (keep local file only)" -ForegroundColor Gray
+        Write-Host ""
+
+        $choice = Read-Host "Select upload method (1-5)"
+        
+        switch ($choice) {
+            "1" {
+                # HTTPS Upload
+                if ([string]::IsNullOrEmpty($UploadUrl) -or $UploadUrl -eq "<<SERVERURL>>/upload") {
+                    $UploadUrl = Read-Host "Enter server URL (e.g., https://server:3500/upload)"
+                }
+                if ([string]::IsNullOrEmpty($AuthKey) -or $AuthKey -eq "<<AUTHKEY>>") {
+                    $AuthKey = Read-Host "Enter authentication key"
+                }
+                
+                Write-LogMessage "Attempting HTTPS upload..." "Cyan"
+                $result = Invoke-MultipartFileUpload -FilePath $ZipPath -FileName $fileName -UploadUrl $UploadUrl -AuthKey $AuthKey -TimeoutMinutes 30
+                if ($result) {
+                    return $true
+                }
+                Write-LogMessage "HTTPS upload failed. Try another method?" "Yellow"
+            }
+            "2" {
+                # FTP Upload
+                $ftpServer = Read-Host "Enter FTP server address"
+                $ftpUsername = Read-Host "Enter FTP username"
+                $ftpPassword = Read-Host "Enter FTP password" -AsSecureString
+                $ftpPasswordPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ftpPassword))
+                $remotePath = Read-Host "Enter remote path (default: /)"
+                if ([string]::IsNullOrEmpty($remotePath)) { $remotePath = "/" }
+                
+                $result = Invoke-FTPUpload -FilePath $ZipPath -FtpServer $ftpServer -FtpUsername $ftpUsername -FtpPassword $ftpPasswordPlain -RemotePath $remotePath
+                if ($result) {
+                    return $true
+                }
+                Write-LogMessage "FTP upload failed. Try another method?" "Yellow"
+            }
+            "3" {
+                # SFTP Upload
+                $sftpServer = Read-Host "Enter SFTP server address"
+                $sftpUsername = Read-Host "Enter SFTP username"
+                $sftpPort = Read-Host "Enter SFTP port (default: 22)"
+                if ([string]::IsNullOrEmpty($sftpPort)) { $sftpPort = 22 } else { $sftpPort = [int]$sftpPort }
+                $sftpKeyFile = Read-Host "Enter path to SSH key file (leave empty for password auth)"
+                $remotePath = Read-Host "Enter remote path (default: /upload/)"
+                if ([string]::IsNullOrEmpty($remotePath)) { $remotePath = "/upload/" }
+                
+                if ([string]::IsNullOrEmpty($sftpKeyFile)) {
+                    Write-LogMessage "Note: For password authentication, you will be prompted by the SFTP client." "Yellow"
+                }
+                
+                $result = Invoke-SFTPUpload -FilePath $ZipPath -SftpServer $sftpServer -SftpUsername $sftpUsername -SftpKeyFile $sftpKeyFile -SftpPort $sftpPort -RemotePath $remotePath
+                if ($result) {
+                    return $true
+                }
+                Write-LogMessage "SFTP upload failed. Try another method?" "Yellow"
+            }
+            "4" {
+                # Network Share
+                $sharePath = Read-Host "Enter network share path (e.g., \\server\share\uploads)"
+                
+                $result = Copy-ToNetworkShare -FilePath $ZipPath -SharePath $sharePath
+                if ($result) {
+                    return $true
+                }
+                Write-LogMessage "Network share copy failed. Try another method?" "Yellow"
+            }
+            "5" {
+                # Skip upload
+                Write-LogMessage "Upload skipped. File saved locally." "Yellow"
+                return $false
+            }
+            default {
+                Write-Host "Invalid choice. Please select 1-5." -ForegroundColor Red
+            }
+        }
+    }
+}
+
 # Upload diagnostics to server
 function Send-DiagnosticsPackage {
     param(
@@ -2298,14 +2557,13 @@ function Send-DiagnosticsPackage {
             return $true
         }
 
-        Write-LogMessage "Upload failed (non-success HTTP status)." "Red"
-        return $false
+        Write-LogMessage "HTTPS upload failed. Offering alternative upload methods..." "Yellow"
+        return Select-UploadMethod -ZipPath $ZipPath -UploadUrl $UploadUrl -AuthKey $AuthKey
     }
     catch {
         Write-LogMessage "Upload error: $($_.Exception.Message)" "Red"
-        Write-LogMessage "The diagnostic package has been saved locally to:" "Yellow"
-        Write-LogMessage "  $ZipPath" "Yellow"
-        return $false
+        Write-LogMessage "Offering alternative upload methods..." "Yellow"
+        return Select-UploadMethod -ZipPath $ZipPath -UploadUrl $UploadUrl -AuthKey $AuthKey
     }
 }
 

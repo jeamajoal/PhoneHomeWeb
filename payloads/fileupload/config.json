@@ -1,38 +1,11 @@
 {
   "name": "FileUploader",
   "endpoint": "fileupload",
-  "version": "1.1.0",
-  "description": "Multi-method file uploader payload supporting HTTPS, FTP, SFTP, curl, and tech-assisted uploads",
+  "version": "1.0.0",
+  "description": "Generic file uploader payload for uploading arbitrary files to the server",
   "serverUrl": "<<SERVERURL>>",
   "downloadFolder": "FileUpload",
   "mainScript": "FileUpload.ps1",
-  "scripts": {
-    "https-powershell": {
-      "file": "FileUpload.ps1",
-      "description": "PowerShell HTTPS upload using System.Net.Http",
-      "platform": "Windows"
-    },
-    "https-curl": {
-      "file": "FileUpload-Curl.sh",
-      "description": "Bash/curl HTTPS upload for Linux, macOS, and WSL",
-      "platform": "Linux/macOS/WSL"
-    },
-    "ftp": {
-      "file": "FileUpload-FTP.ps1",
-      "description": "FTP upload using PowerShell FtpWebRequest",
-      "platform": "Windows"
-    },
-    "sftp": {
-      "file": "FileUpload-SFTP.ps1",
-      "description": "SFTP upload using OpenSSH (Windows 10+ built-in or installed)",
-      "platform": "Windows/Linux"
-    },
-    "tech-assist": {
-      "file": "FileUpload-TechAssist.ps1",
-      "description": "Interactive guided upload helper for tech support scenarios",
-      "platform": "Windows"
-    }
-  },
   "parameters": [
     {
       "name": "ServerUrl",
@@ -51,9 +24,8 @@
     }
   ],
   "requirements": [
-    "Windows 10/11 or Linux/macOS",
-    "PowerShell 5.1+ (for PowerShell scripts)",
-    "curl (for Bash script)",
+    "Windows 10/11",
+    "PowerShell 5.1+",
     "Network connectivity"
   ],
   "author": "jeamajoal",

@@ -2288,6 +2288,10 @@ function Invoke-FTPUpload {
         [string]$RemotePath = "/"
     )
 
+    $fileStream = $null
+    $requestStream = $null
+    $ftpResponse = $null
+
     try {
         $fileName = Split-Path $FilePath -Leaf
         $ftpUri = "ftp://${FtpServer}${RemotePath}${fileName}"
@@ -2302,20 +2306,21 @@ function Invoke-FTPUpload {
         $ftpRequest.KeepAlive = $false
         $ftpRequest.Timeout = 1800000 # 30 minutes
 
-        $fileContent = [System.IO.File]::ReadAllBytes($FilePath)
-        $ftpRequest.ContentLength = $fileContent.Length
+        $fileInfo = Get-Item $FilePath
+        $ftpRequest.ContentLength = $fileInfo.Length
 
+        # Use streaming to avoid loading entire file into memory
+        $fileStream = [System.IO.File]::OpenRead($FilePath)
         $requestStream = $ftpRequest.GetRequestStream()
-        try {
-            $requestStream.Write($fileContent, 0, $fileContent.Length)
-        }
-        finally {
-            $requestStream.Close()
-        }
+        $fileStream.CopyTo($requestStream)
+
+        $requestStream.Close()
+        $requestStream = $null
 
         $ftpResponse = $ftpRequest.GetResponse()
         $statusDescription = $ftpResponse.StatusDescription
         $ftpResponse.Close()
+        $ftpResponse = $null
 
         Write-LogMessage "FTP upload successful: $statusDescription" "Green"
         return $true
@@ -2323,6 +2328,11 @@ function Invoke-FTPUpload {
     catch {
         Write-LogMessage "FTP upload failed: $($_.Exception.Message)" "Red"
         return $false
+    }
+    finally {
+        if ($requestStream) { $requestStream.Close() }
+        if ($fileStream) { $fileStream.Close() }
+        if ($ftpResponse) { $ftpResponse.Close() }
     }
 }
 
@@ -2485,11 +2495,17 @@ function Select-UploadMethod {
                 $ftpServer = Read-Host "Enter FTP server address"
                 $ftpUsername = Read-Host "Enter FTP username"
                 $ftpPassword = Read-Host "Enter FTP password" -AsSecureString
-                $ftpPasswordPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ftpPassword))
-                $remotePath = Read-Host "Enter remote path (default: /)"
-                if ([string]::IsNullOrEmpty($remotePath)) { $remotePath = "/" }
-                
-                $result = Invoke-FTPUpload -FilePath $ZipPath -FtpServer $ftpServer -FtpUsername $ftpUsername -FtpPassword $ftpPasswordPlain -RemotePath $remotePath
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ftpPassword)
+                try {
+                    $ftpPasswordPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+                    $remotePath = Read-Host "Enter remote path (default: /)"
+                    if ([string]::IsNullOrEmpty($remotePath)) { $remotePath = "/" }
+                    
+                    $result = Invoke-FTPUpload -FilePath $ZipPath -FtpServer $ftpServer -FtpUsername $ftpUsername -FtpPassword $ftpPasswordPlain -RemotePath $remotePath
+                }
+                finally {
+                    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+                }
                 if ($result) {
                     return $true
                 }

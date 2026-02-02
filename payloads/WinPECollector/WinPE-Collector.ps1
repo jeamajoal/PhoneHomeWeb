@@ -908,35 +908,161 @@ function Wait-ForNetwork {
 }
 
 function Test-ServerPort {
+    <#
+    .SYNOPSIS
+        Simple boolean connectivity test (backward compatible).
+    .DESCRIPTION
+        Returns $true if server is reachable, $false otherwise.
+        For detailed diagnostics, use Test-ServerConnectivity instead.
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [int]$TimeoutMs = 2500
     )
 
+    $result = Test-ServerConnectivity -Url $Url -TimeoutMs $TimeoutMs
+    return $result.Success
+}
+
+function Test-ServerConnectivity {
+    <#
+    .SYNOPSIS
+        Tests server connectivity and returns detailed diagnostic information.
+    .DESCRIPTION
+        Performs comprehensive connectivity checks including DNS resolution and TCP port connectivity.
+        Returns a result object with success status, error details, and diagnostic information.
+    .PARAMETER Url
+        The URL to test connectivity against (e.g., "https://server.example.com:3500/upload")
+    .PARAMETER TimeoutMs
+        Connection timeout in milliseconds (default: 2500)
+    .OUTPUTS
+        PSCustomObject with properties:
+        - Success: Boolean indicating if connection was successful
+        - Reason: Human-readable reason for failure (or "Connected" on success)
+        - ErrorCode: Error classification (None, InvalidUrl, DnsResolutionFailed, ConnectionTimeout, ConnectionRefused, TlsError, Unknown)
+        - Host: Target hostname
+        - Port: Target port
+        - ResolvedIPs: Array of resolved IP addresses (if DNS succeeded)
+        - Exception: Original exception message (if any)
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [int]$TimeoutMs = 2500
+    )
+
+    $result = [PSCustomObject]@{
+        Success     = $false
+        Reason      = "Unknown error"
+        ErrorCode   = "Unknown"
+        Host        = $null
+        Port        = $null
+        ResolvedIPs = @()
+        Exception   = $null
+    }
+
+    # Step 1: Parse URL
     try {
         $uri = [Uri]$Url
-        $hostName = $uri.Host
-        $port = if ($uri.IsDefaultPort) {
+        $result.Host = $uri.Host
+        
+        # Validate host is not empty
+        if ([string]::IsNullOrWhiteSpace($result.Host)) {
+            $result.Reason = "Invalid URL format - no host specified: $Url"
+            $result.ErrorCode = "InvalidUrl"
+            return $result
+        }
+        
+        $result.Port = if ($uri.IsDefaultPort) {
             if ($uri.Scheme -eq 'https') { 443 } elseif ($uri.Scheme -eq 'http') { 80 } else { $uri.Port }
         } else {
             $uri.Port
         }
-
-        $client = New-Object System.Net.Sockets.TcpClient
-        try {
-            $iar = $client.BeginConnect($hostName, $port, $null, $null)
-            if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
-                return $false
-            }
-            $client.EndConnect($iar)
-            return $true
-        }
-        finally {
-            $client.Close()
-        }
     }
     catch {
-        return $false
+        $result.Reason = "Invalid URL format: $Url"
+        $result.ErrorCode = "InvalidUrl"
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+
+    # Step 2: DNS Resolution
+    try {
+        $dnsResult = [System.Net.Dns]::GetHostAddresses($result.Host)
+        if ($dnsResult.Count -eq 0) {
+            $result.Reason = "DNS resolved but returned no IP addresses for '$($result.Host)'"
+            $result.ErrorCode = "DnsResolutionFailed"
+            return $result
+        }
+        $result.ResolvedIPs = @($dnsResult | ForEach-Object { $_.ToString() })
+    }
+    catch [System.Net.Sockets.SocketException] {
+        $result.Reason = "DNS resolution failed for '$($result.Host)': Host not found"
+        $result.ErrorCode = "DnsResolutionFailed"
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+    catch {
+        $result.Reason = "DNS resolution failed for '$($result.Host)': $($_.Exception.Message)"
+        $result.ErrorCode = "DnsResolutionFailed"
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+
+    # Step 3: TCP Connection Test
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect($result.Host, $result.Port, $null, $null)
+        
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+            $result.Reason = "Connection timed out after ${TimeoutMs}ms - server '$($result.Host):$($result.Port)' did not respond"
+            $result.ErrorCode = "ConnectionTimeout"
+            return $result
+        }
+        
+        $client.EndConnect($iar)
+        $result.Success = $true
+        $result.Reason = "Connected successfully to $($result.Host):$($result.Port)"
+        $result.ErrorCode = "None"
+        return $result
+    }
+    catch [System.Net.Sockets.SocketException] {
+        $socketError = $_.Exception.SocketErrorCode
+        switch ($socketError) {
+            'ConnectionRefused' {
+                $result.Reason = "Connection refused - server '$($result.Host):$($result.Port)' is not accepting connections (port may be closed or service not running)"
+                $result.ErrorCode = "ConnectionRefused"
+            }
+            'HostUnreachable' {
+                $result.Reason = "Host unreachable - cannot route to '$($result.Host)' (check network path/firewall)"
+                $result.ErrorCode = "HostUnreachable"
+            }
+            'NetworkUnreachable' {
+                $result.Reason = "Network unreachable - no route to network for '$($result.Host)'"
+                $result.ErrorCode = "NetworkUnreachable"
+            }
+            'TimedOut' {
+                $result.Reason = "Connection timed out - server '$($result.Host):$($result.Port)' did not respond"
+                $result.ErrorCode = "ConnectionTimeout"
+            }
+            default {
+                $result.Reason = "Socket error connecting to '$($result.Host):$($result.Port)': $socketError"
+                $result.ErrorCode = "SocketError"
+            }
+        }
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+    catch {
+        $result.Reason = "Failed to connect to '$($result.Host):$($result.Port)': $($_.Exception.Message)"
+        $result.ErrorCode = "Unknown"
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+    finally {
+        if ($client) { 
+            try { $client.Close() } catch { }
+        }
     }
 }
 
@@ -952,9 +1078,17 @@ function Ensure-NetworkOrContinue {
         $st = Get-NetworkStatus
         Write-LogMessage "Network detected: $($st.IPv4Addresses -join ', ')" "Green"
 
-        # Best-effort server reachability check (does not require ICMP)
-        if (-not (Test-ServerPort -Url $UploadUrl -TimeoutMs 2500)) {
-            Write-LogMessage "Network is up, but server is not reachable yet." "Yellow"
+        # Best-effort server reachability check with detailed diagnostics
+        $connResult = Test-ServerConnectivity -Url $UploadUrl -TimeoutMs 2500
+        if (-not $connResult.Success) {
+            Write-LogMessage "Network is up, but server is not reachable." "Yellow"
+            Write-LogMessage "  Reason: $($connResult.Reason)" "Yellow"
+            if ($connResult.ResolvedIPs.Count -gt 0) {
+                Write-LogMessage "  Resolved IPs: $($connResult.ResolvedIPs -join ', ')" "Gray"
+            }
+            Write-LogMessage "  Target: $($connResult.Host):$($connResult.Port)" "Gray"
+        } else {
+            Write-LogMessage "Server connectivity verified: $($connResult.Host):$($connResult.Port)" "Green"
         }
         return
     }
@@ -1128,6 +1262,7 @@ function Get-DriveInfo {
         }
         
         # Check if drive is BitLocker encrypted/locked
+        $blVolumeSuccess = $false
         if ($hasGetBitLockerVolume) {
             try {
                 $blVolume = Get-BitLockerVolume -MountPoint "$($driveLetter):" -ErrorAction Stop
@@ -1138,6 +1273,7 @@ function Get-DriveInfo {
                     if ($kp.Count -gt 0) {
                         $info.KeyProtectorId = $kp[0].KeyProtectorId
                     }
+                    $blVolumeSuccess = $true
                 }
             }
             catch {
@@ -1145,7 +1281,7 @@ function Get-DriveInfo {
             }
         }
 
-        if (-not $info.IsEncrypted -and -not $info.IsLocked -and $hasManageBde) {
+        if (-not $blVolumeSuccess -and $hasManageBde) {
             try {
                 $manageBde = (manage-bde -status "$($driveLetter):" 2>&1 | Out-String)
                 $manageBde = Redact-BitLockerRecoveryKey -Text $manageBde
@@ -1310,7 +1446,8 @@ function Unlock-BitLockerDrive {
                             $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
                             $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                             
-                            if ($result -match "successfully|unlocked") {
+                            # Check for successful unlock - must not match "already unlocked" error messages
+                            if ($result -match "(?i)success(?:ful(?:ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                                 Write-LogMessage "Drive $($DriveLetter): successfully unlocked with key from file!" "Green"
 
                                 # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
@@ -1368,7 +1505,8 @@ function Unlock-BitLockerDrive {
                 $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
                 $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                 
-                if ($result -match "successfully|unlocked") {
+                # Check for successful unlock - must not match "already unlocked" error messages
+                if ($result -match "(?i)success(?:ful(?:ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                     Write-LogMessage "Drive $($DriveLetter): successfully unlocked!" "Green"
 
                     # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
@@ -1927,6 +2065,69 @@ function Invoke-OfflineDiagnosticsCollection {
         $collectionInfo += "BitLocker Status: ERROR - $($_.Exception.Message)"
     }
     
+    # 7b. Collect Boot Configuration Data (BCD) information
+    Write-LogMessage "  Collecting BCD information..." "Gray"
+    try {
+        $bcdInfo = @()
+        $bcdInfo += $Divider
+        $bcdInfo += "BOOT CONFIGURATION DATA (BCD) - OFFLINE COLLECTION"
+        $bcdInfo += $Divider
+        $bcdInfo += ""
+        
+        # Collect WinPE BCD (current environment)
+        $bcdInfo += "=== WinPE BCD (current environment) ==="
+        $bcdInfo += ""
+        try {
+            $winpeBcd = bcdedit /enum /all 2>&1
+            $bcdInfo += ($winpeBcd | Out-String)
+        }
+        catch {
+            $bcdInfo += "ERROR collecting WinPE BCD: $($_.Exception.Message)"
+        }
+        $bcdInfo += ""
+        
+        # Collect offline Windows BCD store
+        $bcdInfo += "=== Offline Windows BCD Store ==="
+        $bcdInfo += ""
+        
+        # Try common BCD store locations
+        $bcdStorePaths = @(
+            "$basePath\Boot\BCD",
+            "$basePath\EFI\Microsoft\Boot\BCD"
+        )
+        
+        $bcdStoreFound = $false
+        foreach ($bcdStorePath in $bcdStorePaths) {
+            if (Test-Path $bcdStorePath) {
+                $bcdStoreFound = $true
+                $bcdInfo += "BCD Store Location: $bcdStorePath"
+                $bcdInfo += ""
+                
+                try {
+                    $offlineBcd = bcdedit /store $bcdStorePath /enum /all 2>&1
+                    $bcdInfo += ($offlineBcd | Out-String)
+                    $bcdInfo += ""
+                }
+                catch {
+                    $bcdInfo += "ERROR reading BCD store at $bcdStorePath: $($_.Exception.Message)"
+                    $bcdInfo += ""
+                }
+            }
+        }
+        
+        if (-not $bcdStoreFound) {
+            $bcdInfo += "No BCD store found in standard locations (Boot\BCD, EFI\Microsoft\Boot\BCD)"
+        }
+        
+        $bcdInfo | Out-File (Join-Path $systemInfoDir "BCD_Configuration.txt")
+        $collectionInfo += "BCD Configuration: Collected"
+        Write-LogMessage "  BCD information collected" "Green"
+    }
+    catch {
+        $collectionInfo += "BCD Configuration: ERROR - $($_.Exception.Message)"
+        Write-LogMessage "  Error collecting BCD information: $($_.Exception.Message)" "Yellow"
+    }
+    
     # 8. Collect Windows version information
     Write-LogMessage "  Collecting Windows version information..." "Gray"
     try {
@@ -2229,7 +2430,90 @@ function Invoke-OfflineDiagnosticsCollection {
         $collectionInfo += "Extra folders: Collected $collected, skipped $skipped"
     }
     
-    # 12. Save collection summary
+    # 12. Collect file system listings (Get-ChildItem and dir /s /b formats)
+    Write-LogMessage "  Collecting file system listings..." "Gray"
+    try {
+        $fileListDir = Join-Path $systemInfoDir "FileLists"
+        New-Item -ItemType Directory -Path $fileListDir -Force | Out-Null
+        
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $gciOutputFile = Join-Path $fileListDir "FileList_GCI_$timestamp.txt"
+        $dirOutputFile = Join-Path $fileListDir "FileList_DIR_$timestamp.txt"
+        
+        # Collect Get-ChildItem format (detailed with last modified dates)
+        try {
+            $gciHeader = @"
+File List Collection Report (Get-ChildItem Format)
+Computer: $env:COMPUTERNAME
+Collection Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Collection Environment: WinPE
+Source Drive: $($DriveLetter):
+Root Path: $basePath
+Method: Get-ChildItem (PowerShell)
+
+Format: Mode | LastWriteTime | Length | FullName
+=============================================================================
+
+"@
+            $gciHeader | Out-File -FilePath $gciOutputFile -Encoding UTF8
+            
+            # Collect recursively from the drive root
+            Get-ChildItem -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue | 
+                Format-Table -AutoSize Mode, LastWriteTime, Length, FullName | 
+                Out-File -FilePath $gciOutputFile -Append -Encoding UTF8 -Width 300
+            
+            $gciSize = (Get-Item $gciOutputFile).Length
+            Write-LogMessage "    GCI format collected ($([math]::Round($gciSize/1KB, 2)) KB)" "Gray" -LogOnly
+        }
+        catch {
+            Write-LogMessage "    Error collecting Get-ChildItem format: $($_.Exception.Message)" "Yellow"
+        }
+        
+        # Collect dir /s /b format (bare recursive listing)
+        try {
+            $onWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
+            $method = if ($onWindows) { "cmd.exe dir /s /b" } else { "Get-ChildItem (bare format)" }
+            
+            $dirHeader = @"
+File List Collection Report (dir /s /b Format)
+Computer: $env:COMPUTERNAME
+Collection Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Collection Environment: WinPE
+Source Drive: $($DriveLetter):
+Root Path: $basePath
+Method: $method
+
+=============================================================================
+
+"@
+            $dirHeader | Out-File -FilePath $dirOutputFile -Encoding UTF8
+            
+            if ($onWindows) {
+                # Use cmd.exe to run dir command for Windows compatibility
+                cmd.exe /c "dir `"$basePath`" /s /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            } else {
+                # Fallback to PowerShell for non-Windows systems (should not happen in WinPE)
+                Get-ChildItem -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue | 
+                    Select-Object -ExpandProperty FullName | 
+                    Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            }
+            
+            $dirSize = (Get-Item $dirOutputFile).Length
+            Write-LogMessage "    dir /s /b format collected ($([math]::Round($dirSize/1KB, 2)) KB)" "Gray" -LogOnly
+        }
+        catch {
+            Write-LogMessage "    Error collecting dir format: $($_.Exception.Message)" "Yellow"
+        }
+        
+        $collectionInfo += "File System Listings: Collected (GCI and dir /s /b formats)"
+        Write-LogMessage "  File system listings collected" "Green"
+    }
+    catch {
+        $collectionInfo += "File System Listings: ERROR - $($_.Exception.Message)"
+        Write-LogMessage "  Error collecting file system listings: $($_.Exception.Message)" "Yellow"
+    }
+    
+    # 13. Save collection summary
     $collectionInfo += ""
     $collectionInfo += $Divider
     $collectionInfo += "COLLECTION COMPLETED: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
@@ -2241,6 +2525,22 @@ function Invoke-OfflineDiagnosticsCollection {
 }
 
 function Invoke-MultipartFileUpload {
+    <#
+    .SYNOPSIS
+        Uploads a file to the server and returns detailed result information.
+    .DESCRIPTION
+        Performs a multipart file upload and returns a result object with success status,
+        HTTP status code, server response, and detailed error information if the upload fails.
+    .OUTPUTS
+        PSCustomObject with properties:
+        - Success: Boolean indicating if upload was successful
+        - StatusCode: HTTP status code (e.g., 200, 401, 500)
+        - StatusDescription: HTTP status description
+        - ResponseBody: Server response body text
+        - ErrorCode: Error classification (None, ConnectionFailed, Timeout, TlsError, AuthenticationFailed, ServerError, Unknown)
+        - Reason: Human-readable description of the result
+        - Exception: Original exception message (if any)
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string]$FileName,
@@ -2248,6 +2548,16 @@ function Invoke-MultipartFileUpload {
         [Parameter(Mandatory = $true)][string]$AuthKey,
         [int]$TimeoutMinutes = 30
     )
+
+    $result = [PSCustomObject]@{
+        Success           = $false
+        StatusCode        = $null
+        StatusDescription = $null
+        ResponseBody      = $null
+        ErrorCode         = "Unknown"
+        Reason            = "Unknown error"
+        Exception         = $null
+    }
 
     Add-Type -AssemblyName System.Net.Http
 
@@ -2257,6 +2567,15 @@ function Invoke-MultipartFileUpload {
     $response = $null
 
     try {
+        # First verify server connectivity before attempting upload
+        $connCheck = Test-ServerConnectivity -Url $UploadUrl -TimeoutMs 5000
+        if (-not $connCheck.Success) {
+            $result.ErrorCode = $connCheck.ErrorCode
+            $result.Reason = "Pre-upload connectivity check failed: $($connCheck.Reason)"
+            $result.Exception = $connCheck.Exception
+            return $result
+        }
+
         $httpClient = New-Object System.Net.Http.HttpClient
         $httpClient.Timeout = New-Object System.TimeSpan(0, $TimeoutMinutes, 0)
         $httpClient.DefaultRequestHeaders.Remove("X-Auth-Key") | Out-Null
@@ -2268,7 +2587,111 @@ function Invoke-MultipartFileUpload {
         $content.Add($fileContent, "file", $FileName)
 
         $response = $httpClient.PostAsync($UploadUrl, $content).Result
-        return $response.IsSuccessStatusCode
+        $result.StatusCode = [int]$response.StatusCode
+        $result.StatusDescription = $response.ReasonPhrase
+        
+        try {
+            $result.ResponseBody = $response.Content.ReadAsStringAsync().Result
+        } catch {
+            $result.ResponseBody = "[Could not read response body]"
+        }
+
+        if ($response.IsSuccessStatusCode) {
+            $result.Success = $true
+            $result.ErrorCode = "None"
+            $result.Reason = "Upload completed successfully (HTTP $($result.StatusCode))"
+        } else {
+            # Classify the HTTP error
+            switch ($result.StatusCode) {
+                401 {
+                    $result.ErrorCode = "AuthenticationFailed"
+                    $result.Reason = "Authentication failed (HTTP 401) - check AUTH_KEY is correct"
+                }
+                403 {
+                    $result.ErrorCode = "AuthorizationFailed"
+                    $result.Reason = "Access denied (HTTP 403) - insufficient permissions"
+                }
+                404 {
+                    $result.ErrorCode = "EndpointNotFound"
+                    $result.Reason = "Upload endpoint not found (HTTP 404) - check server URL"
+                }
+                413 {
+                    $result.ErrorCode = "PayloadTooLarge"
+                    $result.Reason = "File too large (HTTP 413) - server rejected the upload size"
+                }
+                { $_ -ge 500 -and $_ -lt 600 } {
+                    $result.ErrorCode = "ServerError"
+                    $result.Reason = "Server error (HTTP $($result.StatusCode)) - $($result.StatusDescription)"
+                }
+                default {
+                    $result.ErrorCode = "HttpError"
+                    $result.Reason = "HTTP error $($result.StatusCode): $($result.StatusDescription)"
+                }
+            }
+            if ($result.ResponseBody) {
+                $result.Reason += " - Server response: $($result.ResponseBody)"
+            }
+        }
+        return $result
+    }
+    catch [System.AggregateException] {
+        # Unwrap AggregateException to get the real error
+        $innerEx = $_.Exception.InnerException
+        if ($innerEx -is [System.Net.Http.HttpRequestException]) {
+            $httpEx = $innerEx
+            if ($httpEx.InnerException -is [System.Net.WebException]) {
+                $webEx = $httpEx.InnerException
+                switch ($webEx.Status) {
+                    'ConnectFailure' {
+                        $result.ErrorCode = "ConnectionFailed"
+                        $result.Reason = "Connection failed - could not establish connection to server"
+                    }
+                    'Timeout' {
+                        $result.ErrorCode = "Timeout"
+                        $result.Reason = "Request timed out after $TimeoutMinutes minutes"
+                    }
+                    'SecureChannelFailure' {
+                        $result.ErrorCode = "TlsError"
+                        $result.Reason = "TLS/SSL error - certificate validation failed or protocol mismatch"
+                    }
+                    'TrustFailure' {
+                        $result.ErrorCode = "TlsError"
+                        $result.Reason = "TLS/SSL certificate trust failure - server certificate not trusted"
+                    }
+                    'NameResolutionFailure' {
+                        $result.ErrorCode = "DnsResolutionFailed"
+                        $result.Reason = "DNS resolution failed - could not resolve server hostname"
+                    }
+                    default {
+                        $result.ErrorCode = "NetworkError"
+                        $result.Reason = "Network error: $($webEx.Status) - $($webEx.Message)"
+                    }
+                }
+            } else {
+                $result.ErrorCode = "HttpError"
+                $result.Reason = "HTTP request error: $($httpEx.Message)"
+            }
+        } elseif ($innerEx -is [System.Threading.Tasks.TaskCanceledException]) {
+            $result.ErrorCode = "Timeout"
+            $result.Reason = "Request timed out after $TimeoutMinutes minutes"
+        } else {
+            $result.ErrorCode = "Unknown"
+            $result.Reason = "Upload failed: $($innerEx.Message)"
+        }
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+    catch [System.Threading.Tasks.TaskCanceledException] {
+        $result.ErrorCode = "Timeout"
+        $result.Reason = "Request timed out after $TimeoutMinutes minutes"
+        $result.Exception = $_.Exception.Message
+        return $result
+    }
+    catch {
+        $result.ErrorCode = "Unknown"
+        $result.Reason = "Upload failed: $($_.Exception.Message)"
+        $result.Exception = $_.Exception.Message
+        return $result
     }
     finally {
         if ($response) { $response.Dispose() }
@@ -2566,10 +2989,16 @@ function Send-DiagnosticsPackage {
     try {
         $fileName = Split-Path $ZipPath -Leaf
         Write-LogMessage "  Uploading $fileName ($([Math]::Round((Get-Item $ZipPath).Length / 1MB, 2)) MB)..." "Gray"
+        Write-LogMessage "  Target: $UploadUrl" "Gray"
 
-        $ok = Invoke-MultipartFileUpload -FilePath $ZipPath -FileName $fileName -UploadUrl $UploadUrl -AuthKey $AuthKey -TimeoutMinutes 30
-        if ($ok) {
+        $uploadResult = Invoke-MultipartFileUpload -FilePath $ZipPath -FileName $fileName -UploadUrl $UploadUrl -AuthKey $AuthKey -TimeoutMinutes 30
+        
+        if ($uploadResult.Success) {
             Write-LogMessage "Upload successful!" "Green"
+            if ($uploadResult.StatusCode) {
+                Write-LogMessage "  HTTP Status: $($uploadResult.StatusCode) $($uploadResult.StatusDescription)" "Gray"
+            }
+            Write-LogMessage "  Local copy saved to: $ZipPath" "Gray"
             return $true
         }
 
@@ -2602,13 +3031,16 @@ function Send-ErrorLogPackage {
         
         Compress-Archive -Path $ErrorLogPath -DestinationPath $errorZipPath -CompressionLevel Fastest -Force
         
-        $ok = Invoke-MultipartFileUpload -FilePath $errorZipPath -FileName $errorZipName -UploadUrl $UploadUrl -AuthKey $AuthKey -TimeoutMinutes 5
-        if ($ok) {
+        $uploadResult = Invoke-MultipartFileUpload -FilePath $errorZipPath -FileName $errorZipName -UploadUrl $UploadUrl -AuthKey $AuthKey -TimeoutMinutes 5
+        if ($uploadResult.Success) {
             Write-LogMessage "Error log uploaded successfully" "Green"
             return $true
         }
         else {
-            Write-LogMessage "Could not upload error log (non-success HTTP status)." "Yellow"
+            Write-LogMessage "Could not upload error log: $($uploadResult.Reason)" "Yellow"
+            if ($uploadResult.ErrorCode -and $uploadResult.ErrorCode -ne "Unknown") {
+                Write-LogMessage "  Error Code: $($uploadResult.ErrorCode)" "Yellow"
+            }
             return $false
         }
     }

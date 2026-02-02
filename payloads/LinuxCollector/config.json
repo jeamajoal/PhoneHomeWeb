@@ -1,0 +1,40 @@
+{
+  "name": "Linux Diagnostic USB Builder",
+  "endpoint": "linuxcollector-builder",
+  "version": "1.0.0",
+  "description": "Creates a bootable Debian Live USB with recovery and diagnostic tools. Companion to the WinPE builder for Linux-based system recovery.",
+  "created": "2025-12-17",
+  "environment": "Debian Live",
+  "requirements": [
+    "Debian/Ubuntu host (or WSL2 with USB passthrough)",
+    "Root privileges",
+    "Internet connection (for ISO and package download)",
+    "USB drive (8GB+ recommended)"
+  ],
+  "features": [
+    "BitLocker unlock with dislocker",
+    "GPT partition table management and recovery",
+    "Partition recovery with testdisk",
+    "Data recovery with ddrescue",
+    "NTFS read/write support",
+    "SMART disk health diagnostics",
+    "LVM and software RAID support",
+    "LUKS encrypted volume support"
+  ],
+  "tools_included": {
+    "bitlocker": ["dislocker"],
+    "partition_management": ["parted", "gdisk", "sgdisk", "fdisk"],
+    "data_recovery": ["testdisk", "ddrescue"],
+    "filesystems": ["ntfs-3g", "e2fsprogs", "xfsprogs", "btrfs-progs", "dosfstools"],
+    "diagnostics": ["smartmontools", "hdparm", "nvme-cli"],
+    "system_info": ["lshw", "dmidecode", "pciutils", "usbutils"],
+    "volume_management": ["lvm2", "mdadm", "cryptsetup"],
+    "utilities": ["curl", "wget", "rsync", "zip", "unzip", "tmux", "htop"]
+  },
+  "output": {
+    "format": "Bootable USB (GPT/FAT32/UEFI)",
+    "base_image": "Debian Live"
+  },
+  "author": "jeamajoal",
+  "license": "MIT"
+}

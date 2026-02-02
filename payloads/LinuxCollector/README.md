@@ -1,13 +1,19 @@
 # LinuxCollector payload
 
-This folder contains the Linux USB Builder script, a companion to the Windows WinPE builder that creates a bootable Debian Live USB with recovery and diagnostic tools.
+This folder contains the Linux USB Builder scripts, a companion to the Windows WinPE builder that creates a bootable Debian Live USB with recovery and diagnostic tools.
 
 ## Contents
 
-- `Build-Linux-USB.sh`
-  - Runs on a Debian/Ubuntu Linux host (or WSL2 with USB passthrough).
+- `Build-Linux-USB.ps1`
+  - **PowerShell script for Windows hosts.**
   - Downloads a Debian Live ISO (or uses a provided one).
-  - Customizes the live environment with recovery tools.
+  - Writes the ISO directly to a USB drive.
+  - Creates a bootable USB drive.
+
+- `Build-Linux-USB.sh`
+  - **Bash script for Linux hosts (or WSL2 with USB passthrough).**
+  - Downloads a Debian Live ISO (or uses a provided one).
+  - Customizes the live environment with additional recovery tools.
   - Creates a bootable USB drive.
 
 - `config.json`
@@ -15,7 +21,13 @@ This folder contains the Linux USB Builder script, a companion to the Windows Wi
 
 ## Prerequisites
 
-For `Build-Linux-USB.sh`:
+### For `Build-Linux-USB.ps1` (Windows):
+
+- Windows 10/11 with Administrator rights
+- Internet connection (to download ISO)
+- USB drive (8GB+ recommended)
+
+### For `Build-Linux-USB.sh` (Linux):
 
 - Debian or Ubuntu host (or WSL2 with USB passthrough configured)
 - Root privileges (sudo)
@@ -33,7 +45,36 @@ Required packages (installed automatically if missing):
 
 ## Usage
 
-### Build a Linux Diagnostic USB
+### Build from Windows (PowerShell)
+
+Run in an elevated PowerShell prompt:
+
+```powershell
+# Interactive mode - lists USB devices and prompts for selection
+.\Build-Linux-USB.ps1
+
+# Specify disk number directly
+.\Build-Linux-USB.ps1 -USBDiskNumber 2
+
+# Use a pre-downloaded Debian Live ISO
+.\Build-Linux-USB.ps1 -IsoPath "C:\Downloads\debian-live.iso" -USBDiskNumber 2
+
+# Download ISO only (no USB write)
+.\Build-Linux-USB.ps1 -SkipWrite
+```
+
+#### PowerShell Command-line Options
+
+| Parameter | Description |
+|-----------|-------------|
+| `-USBDiskNumber` | Target USB disk number. Detected interactively if omitted. |
+| `-IsoPath` | Path to Debian Live ISO. Downloaded if not provided. |
+| `-IsoUrl` | URL to download Debian Live ISO. |
+| `-WorkDir` | Working directory for temp files (default: `$env:TEMP\LinuxUSBBuild`). |
+| `-SkipWrite` | Download ISO only; do not write to USB. |
+| `-KeepWork` | Do not delete working directory after build. |
+
+### Build from Linux (Bash)
 
 Run with root privileges:
 
@@ -51,7 +92,7 @@ sudo ./Build-Linux-USB.sh --device /dev/sdb --debian-iso ~/Downloads/debian-live
 sudo ./Build-Linux-USB.sh --skip-write --keep-work
 ```
 
-### Command-line Options
+#### Bash Command-line Options
 
 | Option | Description |
 |--------|-------------|
@@ -214,7 +255,7 @@ ddrescue -r3 /dev/sdX /dev/sdY rescue.log
 
 | Feature | WinPE Builder | Linux Builder |
 |---------|---------------|---------------|
-| Host OS | Windows 10/11 | Debian/Ubuntu/WSL2 |
+| Build Host OS | Windows 10/11 | Windows 10/11 or Linux |
 | Boot Environment | Windows PE | Debian Live |
 | BitLocker Unlock | Built-in (manage-bde) | dislocker |
 | GPT Tools | diskpart | gdisk, sgdisk |

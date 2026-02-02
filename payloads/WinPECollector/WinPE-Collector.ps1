@@ -1128,6 +1128,7 @@ function Get-DriveInfo {
         }
         
         # Check if drive is BitLocker encrypted/locked
+        $blVolumeSuccess = $false
         if ($hasGetBitLockerVolume) {
             try {
                 $blVolume = Get-BitLockerVolume -MountPoint "$($driveLetter):" -ErrorAction Stop
@@ -1138,6 +1139,7 @@ function Get-DriveInfo {
                     if ($kp.Count -gt 0) {
                         $info.KeyProtectorId = $kp[0].KeyProtectorId
                     }
+                    $blVolumeSuccess = $true
                 }
             }
             catch {
@@ -1145,7 +1147,7 @@ function Get-DriveInfo {
             }
         }
 
-        if (-not $info.IsEncrypted -and -not $info.IsLocked -and $hasManageBde) {
+        if (-not $blVolumeSuccess -and $hasManageBde) {
             try {
                 $manageBde = (manage-bde -status "$($driveLetter):" 2>&1 | Out-String)
                 $manageBde = Redact-BitLockerRecoveryKey -Text $manageBde
@@ -1310,7 +1312,8 @@ function Unlock-BitLockerDrive {
                             $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
                             $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                             
-                            if ($result -match "successfully|unlocked") {
+                            # Check for successful unlock - must not match "already unlocked" error messages
+                            if ($result -match "(?i)success(?:ful(?:ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                                 Write-LogMessage "Drive $($DriveLetter): successfully unlocked with key from file!" "Green"
 
                                 # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.
@@ -1368,7 +1371,8 @@ function Unlock-BitLockerDrive {
                 $result = manage-bde -unlock "$($DriveLetter):" -RecoveryPassword $formattedKey 2>&1
                 $result = Redact-BitLockerRecoveryKey -Text ($result | Out-String)
                 
-                if ($result -match "successfully|unlocked") {
+                # Check for successful unlock - must not match "already unlocked" error messages
+                if ($result -match "(?i)success(?:ful(?:ly)?)?" -and $result -notmatch "(?i)(already|error|fail)") {
                     Write-LogMessage "Drive $($DriveLetter): successfully unlocked!" "Green"
 
                     # Immediately capture post-unlock state to explain cases where the volume still presents as Unknown/0B.

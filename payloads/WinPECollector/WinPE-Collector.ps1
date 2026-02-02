@@ -2229,7 +2229,90 @@ function Invoke-OfflineDiagnosticsCollection {
         $collectionInfo += "Extra folders: Collected $collected, skipped $skipped"
     }
     
-    # 12. Save collection summary
+    # 12. Collect file system listings (Get-ChildItem and dir /s /b formats)
+    Write-LogMessage "  Collecting file system listings..." "Gray"
+    try {
+        $fileListDir = Join-Path $systemInfoDir "FileLists"
+        New-Item -ItemType Directory -Path $fileListDir -Force | Out-Null
+        
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $gciOutputFile = Join-Path $fileListDir "FileList_GCI_$timestamp.txt"
+        $dirOutputFile = Join-Path $fileListDir "FileList_DIR_$timestamp.txt"
+        
+        # Collect Get-ChildItem format (detailed with last modified dates)
+        try {
+            $gciHeader = @"
+File List Collection Report (Get-ChildItem Format)
+Computer: $env:COMPUTERNAME
+Collection Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Collection Environment: WinPE
+Source Drive: $($DriveLetter):
+Root Path: $basePath
+Method: Get-ChildItem (PowerShell)
+
+Format: Mode | LastWriteTime | Length | FullName
+=============================================================================
+
+"@
+            $gciHeader | Out-File -FilePath $gciOutputFile -Encoding UTF8
+            
+            # Collect recursively from the drive root
+            Get-ChildItem -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue | 
+                Format-Table -AutoSize Mode, LastWriteTime, Length, FullName | 
+                Out-File -FilePath $gciOutputFile -Append -Encoding UTF8 -Width 300
+            
+            $gciSize = (Get-Item $gciOutputFile).Length
+            Write-LogMessage "    GCI format collected ($([math]::Round($gciSize/1KB, 2)) KB)" "Gray" -LogOnly
+        }
+        catch {
+            Write-LogMessage "    Error collecting Get-ChildItem format: $($_.Exception.Message)" "Yellow"
+        }
+        
+        # Collect dir /s /b format (bare recursive listing)
+        try {
+            $onWindows = $PSVersionTable.PSVersion.Major -le 5 -or $IsWindows
+            $method = if ($onWindows) { "cmd.exe dir /s /b" } else { "Get-ChildItem (bare format)" }
+            
+            $dirHeader = @"
+File List Collection Report (dir /s /b Format)
+Computer: $env:COMPUTERNAME
+Collection Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Collection Environment: WinPE
+Source Drive: $($DriveLetter):
+Root Path: $basePath
+Method: $method
+
+=============================================================================
+
+"@
+            $dirHeader | Out-File -FilePath $dirOutputFile -Encoding UTF8
+            
+            if ($onWindows) {
+                # Use cmd.exe to run dir command for Windows compatibility
+                cmd.exe /c "dir `"$basePath`" /s /b 2>nul" | Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            } else {
+                # Fallback to PowerShell for non-Windows systems (should not happen in WinPE)
+                Get-ChildItem -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue | 
+                    Select-Object -ExpandProperty FullName | 
+                    Out-File -FilePath $dirOutputFile -Append -Encoding UTF8
+            }
+            
+            $dirSize = (Get-Item $dirOutputFile).Length
+            Write-LogMessage "    dir /s /b format collected ($([math]::Round($dirSize/1KB, 2)) KB)" "Gray" -LogOnly
+        }
+        catch {
+            Write-LogMessage "    Error collecting dir format: $($_.Exception.Message)" "Yellow"
+        }
+        
+        $collectionInfo += "File System Listings: Collected (GCI and dir /s /b formats)"
+        Write-LogMessage "  File system listings collected" "Green"
+    }
+    catch {
+        $collectionInfo += "File System Listings: ERROR - $($_.Exception.Message)"
+        Write-LogMessage "  Error collecting file system listings: $($_.Exception.Message)" "Yellow"
+    }
+    
+    # 13. Save collection summary
     $collectionInfo += ""
     $collectionInfo += $Divider
     $collectionInfo += "COLLECTION COMPLETED: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"

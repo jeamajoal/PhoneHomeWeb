@@ -8,7 +8,6 @@ Minimal file upload server (Node.js/Express) plus PowerShell payloads for collec
 - **Payloads**:
   - `payloads/WinPECollector/` – WinPE offline diagnostic collector (BitLocker-aware) + WinPE USB builder.
   - `payloads/fileupload/` – generic PowerShell file uploader.
-  - `payloads/filelistcollector/` – file system list collector with last modified dates.
 - **Install scripts**: `scripts/` includes a Debian/systemd installer.
 
 ## Quick start (local)
@@ -80,18 +79,6 @@ Example:
 
 ```powershell
 .\payloads\fileupload\FileUpload.ps1 -ServerUrl "http://localhost:3500" -FilePath "C:\temp\example.zip" -AuthKey "<your key>"
-```
-
-### File List Collector payload
-
-`payloads/filelistcollector/FileListCollector.ps1` collects file system listings with last modified dates.
-
-See `payloads/filelistcollector/README.md` for full documentation.
-
-Quick example:
-
-```powershell
-.\payloads\filelistcollector\FileListCollector.ps1 -RootPath "C:\Users" -ServerUrl "http://localhost:3500" -AuthKey "<your key>" -UploadResults
 ```
 
 ## Deployment (Debian)

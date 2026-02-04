@@ -10,13 +10,16 @@ A secure file upload server and diagnostic collection platform for IT support an
 irm https://your-server/windowscollector-installer -H @{"X-Auth-Key"="..."} | iex
 ```
 
-That's it. Diagnostics collected, zipped, and uploaded. The technician gets a notification, the end user moves on with their day.
-
+That's it. Diagnostics collected, zipped, and uploaded.
 > ⚠️ **Security is your responsibility.** The auth key is a shared secret—anyone who has it can upload files to your server. Treat it accordingly:
 > - **Roll your keys after every use** (or at least regularly). Generate a new key, update `.env`, restart the service.
 > - **Don't run the server 24/7** if you don't need to. Spin it up when collecting diagnostics, shut it down when you're done.
 > - **Always use TLS.** Self-signed certs are fine for testing, but use [Let's Encrypt](https://letsencrypt.org/) (it's free) for anything real.
 > - **Limit who has the key.** Share it per-session if possible, not as a permanent credential.
+> - **Never share your high-trust key.** It grants access to download uploaded files. If you must share it, roll it immediately after.
+> - **Restrict access by IP if possible.** Use firewall rules or reverse proxy ACLs to limit who can reach your server.
+>
+> Security is layers. No single measure is enough—combine them.
 
 ---
 

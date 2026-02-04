@@ -165,7 +165,7 @@ sudo mount /dev/sdX2 /mnt/tools   # choose the partition labeled LINUX-TOOLS
 ls -la /mnt/tools/scripts
 ```
 
-If you built with `--with-persistence`, ensure you boot with persistence enabled:
+Persistence is enabled by default. To use it, ensure you boot with persistence enabled:
 
 - If your boot menu has a persistence entry, choose it.
 - Otherwise, edit the boot entry and add the kernel parameter `persistence`.

@@ -18,6 +18,7 @@ That's it. Diagnostics collected, zipped, and uploaded.
 > - **Limit who has the key.** Share it per-session if possible, not as a permanent credential.
 > - **Never share your high-trust key.** It grants access to download uploaded files. If you must share it, roll it immediately after.
 > - **Restrict access by IP if possible.** Use firewall rules or reverse proxy ACLs to limit who can reach your server.
+> - **Bootable USB drives contain your keys.** The WinPE and Linux USB builders bake credentials into the scripts on the drive. When the drive is not in active use, roll your keys on the server. Rebuild the USB when you need it again.
 >
 > Security is layers. No single measure is enough—combine them.
 

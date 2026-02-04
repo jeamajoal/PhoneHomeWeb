@@ -611,10 +611,12 @@ function serveInstallerWithAuthKey(req, res, filePathOrContent, filename = null)
       outputFilename = filename || "installer.ps1";
     }
 
-    // Replace all <<AUTHKEY>> placeholders with actual auth key from request header
+    // Replace all <<AUTHKEY>> placeholders with auth key from request header
+    // Caller MUST provide X-Auth-Key header - we don't inject server key automatically for security
+    const authKey = req.get("X-Auth-Key") || "";
     const updatedContent = fileContent.replace(
       /<<AUTHKEY>>/g,
-      req.get("X-Auth-Key")
+      authKey
     );
 
     // Set headers for PowerShell file download

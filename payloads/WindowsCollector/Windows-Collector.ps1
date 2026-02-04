@@ -1068,12 +1068,12 @@ $Script:Divider
     
     # Upload if not skipped
     if (-not $SkipUpload) {
-        # Validate upload URL
-        if ($UploadUrl -match "<<SERVERURL>>") {
+        # Validate upload URL (use single angle brackets so download endpoint doesn't replace these)
+        if ($UploadUrl -match "<SERVERURL>") {
             Write-Log "Upload URL not configured (still contains placeholder)" "WARN"
             Write-Log "ZIP file saved locally: $zipPath"
         }
-        elseif ($AuthKey -match "<<AUTHKEY>>") {
+        elseif ($AuthKey -match "<AUTHKEY>") {
             Write-Log "Auth key not configured (still contains placeholder)" "WARN"
             Write-Log "ZIP file saved locally: $zipPath"
         }

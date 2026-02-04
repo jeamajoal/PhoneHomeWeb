@@ -337,6 +337,11 @@ See [payloads/WinPECollector/README.md](payloads/WinPECollector/README.md) for f
 
 **Purpose:** Boot into Debian Live Linux for system recovery and forensic analysis.
 
+> ⚠️ **Build requirements:**
+> - Must be built on a **Linux system** (WSL works, but requires USB passthrough via `usbipd-win` to attach and bind the USB device)
+> - Uses **Debian Live** ISO — select "Debian" when choosing the ISO
+> - Only tested with the **Cinnamon** desktop variant
+
 **Use cases:**
 - Unlock BitLocker drives from Linux (dislocker)
 - Partition recovery (testdisk, gdisk)
@@ -355,7 +360,7 @@ See [payloads/WinPECollector/README.md](payloads/WinPECollector/README.md) for f
 **Build a Linux USB:**
 
 ```bash
-# On a Linux machine
+# On a Linux machine (or WSL with USB passthrough)
 curl -fsSL "https://your-server:3500/linux-usb-installer" \
   -H "X-Auth-Key: your-auth-key" | sudo bash
 ```

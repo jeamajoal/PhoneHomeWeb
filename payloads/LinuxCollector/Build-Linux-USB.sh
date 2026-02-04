@@ -500,7 +500,7 @@ prepare_usb() {
 
     if [[ "$with_persistence" == "1" ]] && [[ -b "$part3" ]]; then
         log_info "Formatting persistence partition as ext4..."
-        mkfs.ext4 -L "persistence" "$part3"
+        mkfs.ext4 -F -L "persistence" "$part3"
 
         # Configure persistence
         log_info "Configuring persistence partition..."

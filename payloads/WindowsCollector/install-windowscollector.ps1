@@ -33,11 +33,8 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch { }
 
-# Build parameters
-$params = @{
-    UploadUrl = "$ServerUrl/upload"
-    AuthKey = $AuthKey
-}
+# Build optional parameters (UploadUrl and AuthKey are baked into the downloaded script by server)
+$params = @{}
 
 # Check for silent mode from environment
 if ($env:SILENT -eq "1" -or $env:WINDOWSCOLLECTOR_SILENT -eq "1") {
@@ -73,14 +70,10 @@ $scriptUrl = "$ServerUrl/payloads/WindowsCollector/download/Windows-Collector.ps
 $tempScript = Join-Path $env:TEMP "Windows-Collector-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
 
 try {
-    # Download with auth header
+    # Download with auth header (server replaces <<SERVERURL>> and <<AUTHKEY>> placeholders)
     $webClient = New-Object System.Net.WebClient
     $webClient.Headers.Add("X-Auth-Key", $AuthKey)
     $scriptContent = $webClient.DownloadString($scriptUrl)
-    
-    # Replace placeholders
-    $scriptContent = $scriptContent -replace "<<SERVERURL>>", $ServerUrl
-    $scriptContent = $scriptContent -replace "<<AUTHKEY>>", $AuthKey
     
     # Save to temp
     $scriptContent | Out-File -FilePath $tempScript -Encoding UTF8 -Force

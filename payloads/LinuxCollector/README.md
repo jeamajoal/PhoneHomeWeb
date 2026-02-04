@@ -86,7 +86,7 @@ Then follow the prompts to create a bootable USB with all tools pre-installed.
 - Debian/Ubuntu host (or WSL2 with USB passthrough configured)
 - Root privileges (sudo)
 - Internet connection (to download ISO and packages)
-- USB drive (8GB+ recommended)
+- USB drive (16GB+ recommended for default 10GB persistence; 8GB minimum without persistence)
 
 Required packages (installed automatically if missing):
 
@@ -133,10 +133,10 @@ sudo ./Build-Linux-USB.sh --skip-write --keep-work
 | `--debian-iso PATH` | Path to Debian Live ISO. Downloaded if not provided. |
 | `--iso-url URL` | Direct URL to download a specific Debian Live ISO. |
 | `--iso-base-url URL` | Base URL for ISO directory listing (for interactive selection). |
-| `--server-url URL` | PhoneHomeWeb server URL. Scripts on the USB will have this URL embedded. |
-| `--auth-key KEY` | Authentication key for the server. Scripts will have this key embedded. |
-| `--with-persistence` | Create a persistence partition labeled `persistence`. |
-| `--persist-size SIZE` | Persistence partition size in MB (default: 512). |
+| `--server-url URL` | PhoneHomeWeb server URL (only needed for local copies; injected by server at download). |
+| `--auth-key KEY` | Authentication key (only needed for local copies; injected by server at download). |
+| `--no-persistence` | Disable persistence partition (persistence is ON by default). |
+| `--persist-size SIZE` | Persistence partition size in MB (default: 10240 / 10GB). |
 | `--skip-write` | Build customization only; do not write to USB. |
 | `--work-dir PATH` | Working directory for build files (default: `/tmp/linux-usb-build`). |
 | `--keep-work` | Do not delete working directory after build. |
@@ -155,7 +155,7 @@ When built, the USB contains:
 
 - `LINUXDIAG` (FAT32): Debian Live boot files and live filesystem
 - `LINUX-TOOLS` (FAT32): helper scripts and quick-reference text
-- `persistence` (ext4, optional): save changes across reboots
+- `persistence` (ext4, default 10GB): save changes across reboots (disable with `--no-persistence`)
 
 On the target system after booting, mount the scripts partition and run the helpers:
 
@@ -255,7 +255,69 @@ The bootable USB includes these recovery and diagnostic tools:
 
 ## Quick Reference (After Booting)
 
-### Unlock a BitLocker Drive
+### Recommended: Run the Collector
+
+The easiest way to collect diagnostics is to run `Linux-Collector.sh`, which handles everything automatically:
+
+```bash
+# From the scripts partition (auto-mounted on desktop, or mount manually)
+sudo mount /dev/sdX2 /mnt/tools      # Mount LINUX-TOOLS partition
+cd /mnt/tools/scripts
+
+# Run the collector - handles BitLocker unlock, mounting, collection, and upload
+sudo ./Linux-Collector.sh
+```
+
+The collector will:
+1. Scan for Windows partitions (including BitLocker-encrypted)
+2. Prompt for BitLocker recovery key if needed
+3. Mount the partition read-only
+4. Collect all diagnostic data
+5. Create a ZIP archive and upload to server
+
+### Helper Scripts on the USB
+
+For manual operations, the USB includes these helper scripts in `/mnt/tools/scripts/`:
+
+| Script | Description |
+|--------|-------------|
+| `Linux-Collector.sh` | Full diagnostic collection (recommended) |
+| `detect-bitlocker.sh` | Scan for BitLocker-encrypted partitions |
+| `unlock-bitlocker.sh` | Unlock a BitLocker drive with recovery key |
+| `mount-windows.sh` | Mount Windows/NTFS partitions |
+| `disk-diagnostics.sh` | SMART health checks and disk info |
+| `collect-windows-logs.sh` | Collect logs from already-mounted Windows |
+| `upload-file.sh` | Upload any file to the server |
+| `system-info.sh` | Show hardware and system information |
+| `gpt-backup.sh` | Backup GPT partition tables |
+| `recover-data.sh` | File recovery with testdisk/photorec |
+| `network-setup.sh` | Configure network (DHCP/static IP) |
+| `boot-repair.sh` | Boot repair utilities |
+
+**Example workflow using helper scripts:**
+
+```bash
+# 1. Detect BitLocker partitions
+sudo ./detect-bitlocker.sh
+
+# 2. Unlock BitLocker (prompts for recovery key)
+sudo ./unlock-bitlocker.sh /dev/sda3
+
+# 3. Mount the unlocked partition
+sudo ./mount-windows.sh /dev/sda3
+
+# 4. Collect logs and upload
+sudo ./collect-windows-logs.sh /mnt/windows
+```
+
+---
+
+## Manual Commands Reference
+
+For advanced users or when helper scripts aren't available, here are the underlying commands:
+
+<details>
+<summary><strong>Unlock a BitLocker Drive (manual)</strong></summary>
 
 ```bash
 # Create mount points
@@ -274,29 +336,23 @@ mount -o loop /mnt/bitlocker/dislocker-file /mnt/windows
 ls /mnt/windows/
 ```
 
-### Recover Lost Partitions
+</details>
+
+<details>
+<summary><strong>Mount Windows NTFS Drive (manual)</strong></summary>
 
 ```bash
-# Interactive partition recovery
-testdisk /dev/sdX
+# Read-write mount
+mount -t ntfs-3g /dev/sdX1 /mnt/windows
 
-# Follow the menu to analyze and recover partitions
+# Read-only mount (safer)
+mount -t ntfs-3g -o ro /dev/sdX1 /mnt/windows
 ```
 
-### Repair GPT Partition Table
+</details>
 
-```bash
-# Interactive GPT editor
-gdisk /dev/sdX
-
-# Commands:
-#   p - print partition table
-#   v - verify disk
-#   r - recovery and transformation options
-#   w - write changes
-```
-
-### Check Disk Health
+<details>
+<summary><strong>Check Disk Health (manual)</strong></summary>
 
 ```bash
 # View SMART data
@@ -309,17 +365,38 @@ smartctl -t short /dev/sdX
 smartctl -l selftest /dev/sdX
 ```
 
-### Mount Windows NTFS Drive
+</details>
+
+<details>
+<summary><strong>Recover Lost Partitions (manual)</strong></summary>
 
 ```bash
-# Read-write mount
-mount -t ntfs-3g /dev/sdX1 /mnt/windows
+# Interactive partition recovery
+testdisk /dev/sdX
 
-# Read-only mount (safer)
-mount -t ntfs-3g -o ro /dev/sdX1 /mnt/windows
+# Follow the menu to analyze and recover partitions
 ```
 
-### Clone a Failing Drive
+</details>
+
+<details>
+<summary><strong>Repair GPT Partition Table (manual)</strong></summary>
+
+```bash
+# Interactive GPT editor
+gdisk /dev/sdX
+
+# Commands:
+#   p - print partition table
+#   v - verify disk
+#   r - recovery and transformation options
+#   w - write changes
+```
+
+</details>
+
+<details>
+<summary><strong>Clone a Failing Drive (manual)</strong></summary>
 
 ```bash
 # Clone with error recovery
@@ -328,6 +405,10 @@ ddrescue /dev/sdX /dev/sdY rescue.log
 # Resume interrupted clone
 ddrescue -r3 /dev/sdX /dev/sdY rescue.log
 ```
+
+</details>
+
+---
 
 ## Comparison with WinPE Builder
 
@@ -376,6 +457,8 @@ The `Linux-Collector.sh` script collects the following diagnostic data from offl
 
 ### Collector Usage
 
+When downloaded via `/linuxcollector-installer`, credentials are automatically injected. These flags are only needed when running from a local copy or to override embedded values:
+
 ```bash
 # Run with default settings (interactive)
 sudo ./Linux-Collector.sh
@@ -402,8 +485,9 @@ sudo ./Linux-Collector.sh --auth-key YOUR_KEY_HERE
 ## Notes
 
 - The USB is formatted with GPT and FAT32 for maximum UEFI compatibility.
-- Without persistence, the live environment runs entirely in RAM; no changes are written to the USB during use.
-- With persistence enabled, changes can be saved between boots.
+- Persistence is enabled by default (10GB partition). Use `--no-persistence` to disable.
+- Without persistence, the live environment runs entirely in RAM; changes are lost on reboot.
+- With persistence, installed packages, saved files, and configuration changes survive reboots.
 - For legacy BIOS boot, you may need to modify the partition table or use a hybrid ISO.
 - Some older systems may require disabling Secure Boot to boot from the USB.
 

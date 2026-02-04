@@ -79,7 +79,7 @@ sudo bash scripts/Install-PhoneHomeWeb.sh
 - ✅ Installs Node.js LTS if missing (via NodeSource)
 - ✅ Runs `npm install` to fetch dependencies
 - ✅ Creates `.env` from `.env.example` if missing
-- ✅ **Generates secure random AUTH_KEY and AUTH_KEY_HIGH_TRUST** if placeholders
+- ✅ **Generates secure random AUTH_KEY and AUTH_KEY_HIGH_TRUST** if placeholders like `CHANGE_ME` are detected
 - ✅ Creates a dedicated `phonehomeweb` system user/group
 - ✅ Sets proper file permissions for uploads and logs
 - ✅ Installs and enables a systemd service

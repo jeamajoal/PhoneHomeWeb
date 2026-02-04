@@ -162,7 +162,7 @@ Options:
   --debian-iso PATH   Path to Debian Live ISO. Downloaded if not provided.
   --iso-url URL       Direct URL to download a specific Debian Live ISO.
   --iso-base-url URL  Base URL for ISO directory listing (for interactive selection).
-  --persist-size SIZE Size of persistence partition in MB (default: 512).
+  --persist-size SIZE Size of persistence partition in MB (default: 10240 / 10GB).
   --no-persistence    Disable persistence partition (not recommended).
   --skip-write        Build customization only; do not write to USB.
   --work-dir PATH     Working directory for build files (default: /tmp/linux-usb-build).
@@ -182,8 +182,8 @@ Examples:
   # Use a pre-downloaded ISO
   sudo $SCRIPT_NAME --device /dev/sdb --debian-iso ~/Downloads/debian-live.iso
 
-  # Specify persistence partition size (1GB instead of default 512MB)
-  sudo $SCRIPT_NAME --device /dev/sdb --persist-size 1024
+  # Specify smaller persistence partition (2GB instead of default 10GB)
+  sudo $SCRIPT_NAME --device /dev/sdb --persist-size 2048
 
   # Disable persistence (not recommended - changes won't be saved)
   sudo $SCRIPT_NAME --device /dev/sdb --no-persistence
@@ -3207,7 +3207,7 @@ main() {
     local iso_url=""
     local iso_base_url="$DEFAULT_ISO_BASE_URL"
     local with_persistence=1
-    local persist_size=512
+    local persist_size=10240
     local skip_write=0
     local work_dir="/tmp/linux-usb-build"
     local keep_work=0

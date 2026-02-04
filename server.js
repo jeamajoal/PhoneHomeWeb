@@ -533,7 +533,7 @@ app.use((req, res, next) => {
   // Allow a single unauthenticated validation path (e.g., CA DCV file)
   const dcvPath = envStr(
     "DCV_VALIDATION_PATH",
-    "/.well-known/pki-validation/C6496B1F9978AFBE51D851C02782E3AB.txt"
+    "/.well-known/pki-validation/12345.txt"
   );
 
   // Skip key validation for DCV SSL certificate validation

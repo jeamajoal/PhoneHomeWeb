@@ -1,121 +1,482 @@
 # PhoneHomeWeb
 
-Minimal file upload server (Node.js/Express) plus PowerShell payloads for collecting diagnostics (WinPE) and uploading ZIPs/files to a central endpoint.
+A secure file upload server and diagnostic collection platform for IT support and system recovery scenarios.
 
-## What this repo contains
+PhoneHomeWeb provides a Node.js/Express server that accepts file uploads from authenticated clients, plus a suite of PowerShell and Bash payloads for collecting diagnostics from Windows and Linux systems—online or from bootable USB recovery environments.
 
-- **Server**: `server.js` (Express + multer) listens on port `3500` by default.
-- **Payloads**:
-  - `payloads/WinPECollector/` – WinPE offline diagnostic collector (BitLocker-aware) + WinPE USB builder.
-  - `payloads/LinuxCollector/` – Linux USB builder for Debian Live with recovery/forensic tools (dislocker, testdisk, sleuthkit, etc.). Built from Linux using the Bash builder.
-  - `payloads/WindowsCollector/` – Online Windows diagnostic collector for running systems (EPM/RMM deployment).
-  - `payloads/fileupload/` – Generic PowerShell file uploader.
-- **Install scripts**: `scripts/` includes a Debian/systemd installer.
+---
 
-## Quick start (local)
+## Table of Contents
 
-1) Install dependencies:
+- [Quick Start](#quick-start)
+  - [Option A: Clone and Install (Recommended)](#option-a-clone-and-install-recommended)
+  - [Option B: One-Liner Installer](#option-b-one-liner-installer)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
+  - [Authentication Keys](#authentication-keys)
+- [TLS/HTTPS Setup](#tlshttps-setup)
+  - [Using Your Own Certificates](#using-your-own-certificates)
+  - [Self-Signed Certificates (Development/Testing)](#self-signed-certificates-developmenttesting)
+- [Payloads](#payloads)
+  - [Windows Collector](#windows-collector)
+  - [WinPE Collector (Offline USB)](#winpe-collector-offline-usb)
+  - [Linux Collector (Live USB)](#linux-collector-live-usb)
+  - [File Upload (Generic)](#file-upload-generic)
+- [API Endpoints](#api-endpoints)
+  - [Standard Endpoints (AUTH_KEY)](#standard-endpoints-auth_key)
+  - [High-Trust Endpoints (AUTH_KEY_HIGH_TRUST)](#high-trust-endpoints-auth_key_high_trust)
+  - [Installer Endpoints](#installer-endpoints)
+- [Security Model](#security-model)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Start
+
+### Option A: Clone and Install (Recommended)
+
+This gives you full control and easy updates via `git pull`.
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/yourusername/PhoneHomeWeb.git
+cd PhoneHomeWeb
+
+# 2. Run the installer (Debian/Ubuntu with systemd)
+sudo bash scripts/Install-PhoneHomeWeb.sh
+```
+
+**What the installer does:**
+
+- ✅ Installs Node.js LTS if missing (via NodeSource)
+- ✅ Runs `npm install` to fetch dependencies
+- ✅ Creates `.env` from `.env.example` if missing
+- ✅ **Generates secure random AUTH_KEY and AUTH_KEY_HIGH_TRUST** if placeholders
+- ✅ Creates a dedicated `phonehomeweb` system user/group
+- ✅ Sets proper file permissions for uploads and logs
+- ✅ Installs and enables a systemd service
+
+After installation, retrieve your generated keys:
+
+```bash
+# View your auth keys (keep these secret!)
+sudo grep AUTH_KEY /opt/PhoneHomeWeb/.env
+```
+
+### Option B: One-Liner Installer
+
+For quick deployment on a fresh Debian/Ubuntu server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yourusername/PhoneHomeWeb/main/scripts/Install-PhoneHomeWeb.sh | sudo bash
+```
+
+> ⚠️ **Note:** This downloads and executes a script. Review it first if you're security-conscious.
+
+### Manual Installation (Any OS)
+
+```bash
+# Clone and enter directory
+git clone https://github.com/yourusername/PhoneHomeWeb.git
+cd PhoneHomeWeb
+
+# Install dependencies
 npm install
-```
 
-2) Create your local config file:
+# Create configuration
+cp .env.example .env
 
-```bash
-copy .env.example .env
-```
+# Edit .env - set at minimum:
+#   AUTH_KEY=your-secret-key-here
+#   AUTH_KEY_HIGH_TRUST=another-secret-key-here
+#   SERVER_URL=https://your-server:3500
 
-3) Edit `.env` and set at minimum:
-
-- `AUTH_KEY` (required)
-- `AUTH_KEY_HIGH_TRUST` (recommended)
-
-4) Run the server:
-
-```bash
+# Start the server
 npm start
 ```
 
-Server default URL:
+---
 
-- `http://localhost:3500/`
+## Configuration
 
-## HTTPS/TLS
+### Environment Variables
 
-TLS is supported via environment variables.
+Configuration is managed through a `.env` file in the repository root. The installer creates this automatically, but for manual setups:
 
-- Set `DISABLE_SSL=false`
-- Provide either `TLS_PFX_FILE` (a `.pfx/.p12` bundle) or `TLS_KEY_FILE` and `TLS_CERT_FILE` (PEM)
-- Optionally set `TLS_CA_FILE`
+```bash
+cp .env.example .env
+```
 
-By default, cert files are expected under `CERTS_DIR` (default: `certs/`).
+**Key settings:**
 
-**Important:** never commit private keys. This repo’s `.gitignore` excludes `.env` and common cert key formats.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3500` | Server listen port |
+| `BIND_HOST` | `0.0.0.0` | Bind address |
+| `SERVER_URL` | `http://localhost:3500` | Public URL for client scripts |
+| `AUTH_KEY` | *(required)* | Standard authentication key |
+| `AUTH_KEY_HIGH_TRUST` | *(optional)* | Key for sensitive operations |
+| `MAX_UPLOAD_MB` | `500` | Maximum upload size in MB |
+| `UPLOADS_DIR` | `uploads` | Where uploaded files are stored |
+| `DISABLE_SSL` | `true` | Set to `false` for HTTPS |
 
-## Authentication
+### Authentication Keys
 
-Requests are authenticated via the header:
+PhoneHomeWeb uses two authentication levels:
 
-- `X-Auth-Key: <AUTH_KEY>`
+1. **AUTH_KEY** (Standard) - Required for all requests
+   - File uploads
+   - Downloading payloads
+   - Running collectors
 
-The server refuses to start if `AUTH_KEY` is not set.
+2. **AUTH_KEY_HIGH_TRUST** (Elevated) - Required for sensitive operations
+   - Listing uploaded files (`GET /uploads`)
+   - Downloading uploaded files (`GET /download`)
+
+**Generating secure keys:**
+
+```bash
+# Using OpenSSL (recommended)
+openssl rand -hex 32
+
+# Or Python
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+> 🔒 The installer automatically generates cryptographically secure keys if you leave the placeholders.
+
+---
+
+## TLS/HTTPS Setup
+
+**Production deployments should always use HTTPS.** The server supports TLS natively.
+
+### Using Your Own Certificates
+
+If you have certificates from a certificate authority (Let's Encrypt, DigiCert, etc.):
+
+1. Place your certificate files in the `certs/` directory (or specify absolute paths)
+
+2. Update `.env`:
+
+```dotenv
+DISABLE_SSL=false
+SERVER_URL=https://your-domain.com:3500
+
+# Option 1: PEM files (most common)
+TLS_KEY_FILE=privkey.pem
+TLS_CERT_FILE=fullchain.pem
+
+# Option 2: PFX/PKCS12 bundle
+TLS_PFX_FILE=certificate.pfx
+TLS_PFX_PASSPHRASE=your-passphrase
+```
+
+**Let's Encrypt example:**
+
+```bash
+# After running certbot, symlink or copy:
+sudo cp /etc/letsencrypt/live/your-domain/privkey.pem certs/
+sudo cp /etc/letsencrypt/live/your-domain/fullchain.pem certs/
+sudo chown phonehomeweb:phonehomeweb certs/*.pem
+sudo chmod 640 certs/*.pem
+```
+
+### Self-Signed Certificates (Development/Testing)
+
+For testing or internal networks, generate self-signed certificates:
+
+**On Linux/macOS (OpenSSL):**
+
+```bash
+cd certs
+
+# Generate CA
+openssl genrsa -out ca-key.pem 2048
+openssl req -new -x509 -key ca-key.pem -out ca-cert.pem -days 365 \
+  -subj "/CN=PhoneHomeWeb-CA"
+
+# Generate server certificate
+openssl genrsa -out server-key.pem 2048
+openssl req -new -key server-key.pem -out server-csr.pem \
+  -subj "/CN=your-server-hostname"
+openssl x509 -req -in server-csr.pem -CA ca-cert.pem -CAkey ca-key.pem \
+  -CAcreateserial -out server-cert.pem -days 365
+
+cd ..
+```
+
+**On Windows (PowerShell):**
+
+```powershell
+# Set your hostname first
+$env:PHW_TLS_CN = "your-server-hostname"
+
+# Run the included generator
+.\certs\generate-certs.ps1
+```
+
+Then update `.env`:
+
+```dotenv
+DISABLE_SSL=false
+TLS_KEY_FILE=server-key.pem
+TLS_CERT_FILE=server-cert.pem
+```
+
+> ⚠️ **Self-signed certificates require clients to trust the CA** or bypass verification. For production, use a real certificate authority.
+
+---
 
 ## Payloads
 
-### WinPE Collector
-
-See `payloads/WinPECollector/README.md` for:
-
-- building a WinPE USB
-- running the collector
-- optional customization via a drop-in JSON file
-
-### Linux Collector
-
-See `payloads/LinuxCollector/README.md` for:
-
-- building a bootable Debian Live USB with recovery tools
-- dislocker (BitLocker unlock), testdisk (partition recovery), gdisk (GPT repair)
-- digital forensics tools (sleuthkit, foremost, binwalk, chntpw)
-- companion to WinPE for Linux-based system recovery
+PhoneHomeWeb includes ready-to-use diagnostic collection tools for various scenarios.
 
 ### Windows Collector
 
-See `payloads/WindowsCollector/README.md` for:
+**Purpose:** Collect comprehensive diagnostics from a **running Windows system**.
 
-- online Windows diagnostic collection (running systems)
-- deployment via EPM/RMM tools or interactive use
-- silent mode for unattended collection
+**Use cases:**
+- Remote troubleshooting via RMM/EPM tools
+- Silent background collection during support calls
+- Automated health checks
 
-### File Upload payload
+**What it collects:**
+- Event logs (evtx files)
+- Registry hives (SYSTEM, SOFTWARE)
+- Windows Update/CBS/DISM logs
+- Crash dumps and WER reports
+- Network configuration
+- Installed software and drivers
+- Running processes and services
+- Security configuration (Defender, GPO, TPM)
 
-`payloads/fileupload/FileUpload.ps1` uploads a file to:
-
-- `POST <ServerUrl>/upload`
-
-Example:
+**Deployment (one-liner for RMM/EPM):**
 
 ```powershell
-.\payloads\fileupload\FileUpload.ps1 -ServerUrl "http://localhost:3500" -FilePath "C:\temp\example.zip" -AuthKey "<your key>"
+# Run as Administrator
+Invoke-RestMethod -Uri "https://your-server:3500/windowscollector-installer" `
+  -Headers @{"X-Auth-Key"="your-auth-key"} | Invoke-Expression
 ```
 
-## Deployment (Debian)
+**Interactive use:**
 
-Use:
+```powershell
+# Download with credentials injected
+$headers = @{ "X-Auth-Key" = "your-auth-key" }
+Invoke-RestMethod -Uri "https://your-server:3500/payloads/WindowsCollector/download/Windows-Collector.ps1" `
+  -Headers $headers -OutFile Windows-Collector.ps1
 
-- `scripts/Install-PhoneHomeWeb.sh`
+# Run (uploads automatically)
+.\Windows-Collector.ps1
 
-It installs Node.js, writes a `.env`, and sets up a systemd service.
+# Or collect without uploading
+.\Windows-Collector.ps1 -SkipUpload
+```
 
-## Repo hygiene
+See [payloads/WindowsCollector/README.md](payloads/WindowsCollector/README.md) for full documentation.
 
-Before publishing or sharing a zip of this repo folder:
+---
 
-- Ensure `.env` contains no sensitive values you don’t want shared
-- Remove any local TLS keys/certs you placed under `certs/`
-- Confirm `uploads/` and logs are not present
+### WinPE Collector (Offline USB)
+
+**Purpose:** Boot into Windows PE to collect diagnostics from systems that **won't boot** or need **offline analysis**.
+
+**Use cases:**
+- Blue screen / boot failure diagnosis
+- BitLocker-encrypted drive recovery
+- Offline registry and event log extraction
+- Pre-OS diagnostics
+
+**Features:**
+- Automatic BitLocker detection and unlock (via recovery key)
+- Collects from offline Windows installations
+- Works on UEFI and Legacy BIOS systems
+- Customizable via JSON configuration
+
+**Build a WinPE USB:**
+
+```powershell
+# On a Windows machine with Windows ADK installed
+Invoke-RestMethod -Uri "https://your-server:3500/winpe-usb-installer" `
+  -Headers @{"X-Auth-Key"="your-auth-key"} | Invoke-Expression
+```
+
+See [payloads/WinPECollector/README.md](payloads/WinPECollector/README.md) for full documentation.
+
+---
+
+### Linux Collector (Live USB)
+
+**Purpose:** Boot into Debian Live Linux for system recovery and forensic analysis.
+
+**Use cases:**
+- Unlock BitLocker drives from Linux (dislocker)
+- Partition recovery (testdisk, gdisk)
+- File system repair
+- Digital forensics (sleuthkit, foremost, binwalk)
+- Password reset (chntpw)
+
+**Included tools:**
+- `dislocker` - BitLocker volume access
+- `testdisk` / `photorec` - Partition and file recovery
+- `sleuthkit` - Forensic analysis
+- `chntpw` - Windows password reset
+- `ntfs-3g` - NTFS read/write support
+- Network tools for uploading collected data
+
+**Build a Linux USB:**
+
+```bash
+# On a Linux machine
+curl -fsSL "https://your-server:3500/linux-usb-installer" \
+  -H "X-Auth-Key: your-auth-key" | sudo bash
+```
+
+See [payloads/LinuxCollector/README.md](payloads/LinuxCollector/README.md) for full documentation.
+
+---
+
+### File Upload (Generic)
+
+**Purpose:** Simple authenticated file upload for any scenario.
+
+**Use cases:**
+- Upload arbitrary files from scripts
+- Integration with other tools
+- Manual file transfer
+
+```powershell
+# PowerShell
+.\payloads\fileupload\FileUpload.ps1 `
+  -ServerUrl "https://your-server:3500" `
+  -FilePath "C:\logs\diagnostic.zip" `
+  -AuthKey "your-auth-key"
+```
+
+```bash
+# Bash/curl
+curl -X POST "https://your-server:3500/upload" \
+  -H "X-Auth-Key: your-auth-key" \
+  -F "file=@/path/to/file.zip"
+```
+
+---
+
+## API Endpoints
+
+### Standard Endpoints (AUTH_KEY)
+
+These endpoints require the `X-Auth-Key` header with your standard auth key.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload` | POST | Upload a file (multipart/form-data) |
+| `/payloads` | GET | List available payloads |
+| `/payloads/:folder/download/:file` | GET | Download a payload file (with credential injection) |
+| `/api/health` | GET | Health check (no auth required) |
+
+### High-Trust Endpoints (AUTH_KEY_HIGH_TRUST)
+
+These endpoints require the `X-Auth-Key` header with your **high-trust** key.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/uploads` | GET | List all uploaded files |
+| `/download` | GET | Download an uploaded file (requires `X-Filename` header) |
+
+**Example: List uploaded files**
+
+```bash
+curl -s "https://your-server:3500/uploads" \
+  -H "X-Auth-Key: your-high-trust-key" | jq
+```
+
+**Example: Download an uploaded file**
+
+```bash
+curl -s "https://your-server:3500/download" \
+  -H "X-Auth-Key: your-high-trust-key" \
+  -H "X-Filename: COMPUTER_Serial_20240101-120000_WindowsLogs.zip" \
+  -o downloaded.zip
+```
+
+### Installer Endpoints
+
+These endpoints serve installer scripts with credentials automatically injected.
+
+| Endpoint | Description |
+|----------|-------------|
+| `/windowscollector-installer` | Windows Collector one-liner installer |
+| `/winpe-usb-installer` | WinPE USB builder installer |
+| `/winpecollector-installer` | WinPE Collector installer |
+| `/linux-usb-installer` | Linux USB builder installer |
+| `/linuxcollector-installer` | Linux Collector installer |
+| `/fileupload` | Generic file upload script |
+
+All installer endpoints require the `X-Auth-Key` header. The server replaces `<<SERVERURL>>` and `<<AUTHKEY>>` placeholders in the scripts with actual values.
+
+---
+
+## Security Model
+
+PhoneHomeWeb implements defense-in-depth:
+
+1. **Authentication Required** - All requests must include `X-Auth-Key` header
+2. **Two-Tier Keys** - Sensitive operations require a separate high-trust key
+3. **Request Logging** - All requests logged to JSONL files (success and blocked)
+4. **Path Sanitization** - Upload filenames sanitized to prevent path traversal
+5. **No Directory Listing** - Uploads directory is not browsable
+6. **TLS Support** - Native HTTPS for encrypted transport
+7. **systemd Hardening** - Service runs as dedicated user with restricted privileges
+
+**What gets logged:**
+
+```jsonl
+{"timestamp":"2024-01-01T12:00:00.000Z","method":"POST","url":"/upload","ip":"192.168.1.100","filename":"diagnostics.zip","size":1048576}
+```
+
+Blocked requests are logged separately with reason codes.
+
+---
+
+## Troubleshooting
+
+**Server won't start - "Missing required env var AUTH_KEY"**
+
+You must set `AUTH_KEY` in `.env`:
+```bash
+echo "AUTH_KEY=$(openssl rand -hex 32)" >> .env
+```
+
+**Upload fails with 413 "Payload Too Large"**
+
+Increase `MAX_UPLOAD_MB` in `.env` (default is 500 MB).
+
+**Windows Collector shows "Upload URL not configured"**
+
+The script wasn't downloaded through the credential-injecting endpoint. Use:
+```powershell
+Invoke-RestMethod -Uri "https://server/windowscollector-installer" -Headers @{"X-Auth-Key"="..."} | iex
+```
+
+**Certificate errors with self-signed certs**
+
+Either:
+- Add the CA certificate to trusted roots on clients, or
+- Use `-SkipCertificateCheck` in PowerShell (testing only), or
+- Use a real certificate from a trusted CA (recommended)
+
+**"High-trust authentication key required"**
+
+You're trying to access `/uploads` or `/download` with the standard key. Use `AUTH_KEY_HIGH_TRUST` instead.
+
+---
 
 ## License
 
-MIT (see individual payload `config.json` files where applicable).
+MIT License - See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or pull request.

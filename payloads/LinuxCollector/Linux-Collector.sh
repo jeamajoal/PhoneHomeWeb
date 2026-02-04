@@ -1375,10 +1375,12 @@ show_upload_menu() {
         
         case "$choice" in
             1)
-                if [[ "$UPLOAD_URL" == "<<SERVERURL>>/upload" || -z "$UPLOAD_URL" ]]; then
+                # Check if URL is still a placeholder (not a valid URL)
+                if [[ ! "$UPLOAD_URL" =~ ^https?:// ]]; then
                     read -p "Enter server URL (e.g., https://server:3500/upload): " UPLOAD_URL
                 fi
-                if [[ "$AUTH_KEY" == "<<AUTHKEY>>" || -z "$AUTH_KEY" ]]; then
+                # Check if auth key is still a placeholder (contains angle brackets)
+                if [[ "$AUTH_KEY" =~ [\<\>] ]]; then
                     read -p "Enter authentication key: " AUTH_KEY
                 fi
                 
@@ -1507,7 +1509,8 @@ main() {
     # Upload or save locally
     if [[ "$SKIP_UPLOAD" != "true" ]]; then
         echo ""
-        if [[ "$UPLOAD_URL" != "<<SERVERURL>>/upload" && "$AUTH_KEY" != "<<AUTHKEY>>" ]]; then
+        # Check if credentials are configured (URL starts with http and auth key has no angle brackets)
+        if [[ "$UPLOAD_URL" =~ ^https?:// && ! "$AUTH_KEY" =~ [\<\>] ]]; then
             # Try automatic upload first
             if ! upload_archive "$zip_path"; then
                 show_upload_menu "$zip_path"

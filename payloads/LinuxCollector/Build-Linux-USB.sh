@@ -1406,13 +1406,15 @@ if [ ! -f "$FILE" ]; then
     exit 1
 fi
 
-# Check if server URL is still placeholder (use single angle brackets so server doesn't replace these)
-if [[ "$SERVER_URL" == *"<SERVERURL>"* ]] || [[ "$SERVER_URL" == "<<SERVERURL>>" ]]; then
+# Check if server URL is still a placeholder (not a valid URL)
+# Note: We check if it does NOT start with http to detect unreplaced placeholders
+if [[ ! "$SERVER_URL" =~ ^https?:// ]]; then
     echo -e "${YELLOW}Server URL not configured.${NC}"
     read -p "Enter server URL (e.g., https://server:3500/upload): " SERVER_URL
 fi
 
-if [[ "$AUTH_KEY" == *"<AUTHKEY>"* ]] || [[ "$AUTH_KEY" == "<<AUTHKEY>>" ]]; then
+# Check if auth key is still a placeholder (contains angle brackets)
+if [[ "$AUTH_KEY" =~ [\<\>] ]]; then
     echo -e "${YELLOW}Auth key not configured.${NC}"
     read -p "Enter authentication key: " AUTH_KEY
 fi

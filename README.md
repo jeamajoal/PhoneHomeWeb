@@ -375,31 +375,25 @@ If building from WSL, you need to pass the USB drive through to the Linux enviro
    winget install usbipd
    ```
 
-2. **Install USB/IP tools in WSL**:
-   ```bash
-   sudo apt install linux-tools-generic hwdata
-   sudo update-alternatives --install /usr/local/bin/usbip usbip /usr/lib/linux-tools/*-generic/usbip 20
-   ```
-
-3. **List USB devices** (PowerShell as Administrator):
+2. **List USB devices** (PowerShell as Administrator):
    ```powershell
    usbipd list
    ```
    Find your USB drive (e.g., `BUSID 2-3`).
 
-4. **Bind and attach the device**:
+3. **Bind and attach the device**:
    ```powershell
    usbipd bind --busid 2-3
    usbipd attach --wsl --busid 2-3
    ```
 
-5. **Verify in WSL**:
+4. **Verify in WSL**:
    ```bash
    lsblk
    ```
    Your USB drive should appear (e.g., `/dev/sdb`).
 
-6. **After building**, detach the device:
+5. **After building**, detach the device:
    ```powershell
    usbipd detach --busid 2-3
    ```

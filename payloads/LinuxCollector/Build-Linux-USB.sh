@@ -120,6 +120,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
 # -----------------------------------------------------------------------------
@@ -140,6 +141,10 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
+}
+
+log_detail() {
+    echo -e "  ${GRAY}$*${NC}"
 }
 
 die() {
@@ -1348,7 +1353,7 @@ SCRIPT_EOF
 #===============================================================================
 
 # Default values (can be overridden by environment or arguments)
-SERVER_URL="${SERVER_URL:-<<SERVERURL>>}"
+SERVER_URL="${SERVER_URL:-<<SERVERURL>>/upload}"
 AUTH_KEY="${AUTH_KEY:-<<AUTHKEY>>}"
 
 GREEN='\033[0;32m'
@@ -1407,7 +1412,7 @@ if [[ "$SERVER_URL" == *"<SERVERURL>"* ]] || [[ "$SERVER_URL" == "<<SERVERURL>>"
     read -p "Enter server URL (e.g., https://server:3500/upload): " SERVER_URL
 fi
 
-if [[ "$AUTH_KEY" == *"<AUTHKEY>"* ]] || [[ "$AUTH_KEY" == "<<AUTHKEY>>" ]] || [ -z "$AUTH_KEY" ]; then
+if [[ "$AUTH_KEY" == *"<AUTHKEY>"* ]] || [[ "$AUTH_KEY" == "<<AUTHKEY>>" ]]; then
     echo -e "${YELLOW}Auth key not configured.${NC}"
     read -p "Enter authentication key: " AUTH_KEY
 fi

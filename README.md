@@ -7,8 +7,9 @@ Minimal file upload server (Node.js/Express) plus PowerShell payloads for collec
 - **Server**: `server.js` (Express + multer) listens on port `3500` by default.
 - **Payloads**:
   - `payloads/WinPECollector/` – WinPE offline diagnostic collector (BitLocker-aware) + WinPE USB builder.
-  - `payloads/LinuxCollector/` – Linux USB builder for Debian Live with recovery tools (dislocker, testdisk, gdisk, etc.). Supports building from Windows (PowerShell) or Linux (Bash).
-  - `payloads/fileupload/` – generic PowerShell file uploader.
+  - `payloads/LinuxCollector/` – Linux USB builder for Debian Live with recovery/forensic tools (dislocker, testdisk, sleuthkit, etc.). Built from Linux using the Bash builder.
+  - `payloads/WindowsCollector/` – Online Windows diagnostic collector for running systems (EPM/RMM deployment).
+  - `payloads/fileupload/` – Generic PowerShell file uploader.
 - **Install scripts**: `scripts/` includes a Debian/systemd installer.
 
 ## Quick start (local)
@@ -76,7 +77,16 @@ See `payloads/LinuxCollector/README.md` for:
 
 - building a bootable Debian Live USB with recovery tools
 - dislocker (BitLocker unlock), testdisk (partition recovery), gdisk (GPT repair)
+- digital forensics tools (sleuthkit, foremost, binwalk, chntpw)
 - companion to WinPE for Linux-based system recovery
+
+### Windows Collector
+
+See `payloads/WindowsCollector/README.md` for:
+
+- online Windows diagnostic collection (running systems)
+- deployment via EPM/RMM tools or interactive use
+- silent mode for unattended collection
 
 ### File Upload payload
 

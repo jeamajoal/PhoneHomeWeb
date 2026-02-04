@@ -1,25 +1,28 @@
 {
-  "name": "Linux Diagnostic USB Builder",
-  "endpoint": "linuxcollector-builder",
+  "name": "Linux Diagnostic Collector & USB Builder",
+  "endpoint": "linuxcollector-installer",
+  "usb_builder_endpoint": "linux-usb-installer",
   "version": "1.0.0",
-  "description": "Creates a bootable Debian Live USB with recovery and diagnostic tools. Companion to the WinPE builder for Linux-based system recovery.",
+  "description": "Linux-based offline Windows diagnostic collector. Boots Debian Live USB to unlock BitLocker drives, collect event logs, registry hives, crash dumps, and upload to server. Companion to WinPE Collector for Linux-based recovery.",
   "created": "2025-12-17",
   "environment": "Debian Live",
   "requirements": [
-    "Debian/Ubuntu host (or WSL2 with USB passthrough)",
+    "Debian/Ubuntu host (or WSL2 with USB passthrough) for USB creation",
     "Root privileges",
     "Internet connection (for ISO and package download)",
     "USB drive (8GB+ recommended)"
   ],
   "features": [
-    "BitLocker unlock with dislocker",
-    "GPT partition table management and recovery",
-    "Partition recovery with testdisk",
-    "Data recovery with ddrescue",
-    "NTFS read/write support",
-    "SMART disk health diagnostics",
-    "LVM and software RAID support",
-    "LUKS encrypted volume support"
+    "BitLocker unlock with dislocker (recovery key)",
+    "Offline Windows partition detection",
+    "Event log collection (.evtx files)",
+    "Registry hive collection (SYSTEM, SOFTWARE, DEFAULT)",
+    "Windows Update/CBS/DISM log collection",
+    "Setup/Upgrade log collection (Panther/MoSetup)",
+    "Crash dump collection (minidumps, MEMORY.DMP)",
+    "Disk health diagnostics (SMART)",
+    "ZIP archive creation and upload",
+    "Multiple upload methods (HTTPS, SCP, local copy)"
   ],
   "tools_included": {
     "bitlocker": ["dislocker"],
@@ -31,9 +34,32 @@
     "volume_management": ["lvm2", "mdadm", "cryptsetup"],
     "utilities": ["curl", "wget", "rsync", "zip", "unzip", "tmux", "htop"]
   },
+  "scripts": {
+    "collector": "Linux-Collector.sh",
+    "usb_builder": "Build-Linux-USB.sh",
+    "collector_installer": "install-linuxcollector.sh",
+    "usb_builder_installer": "install-linux-usb-builder.sh"
+  },
+  "collected_data": [
+    "Event logs (all .evtx files)",
+    "Registry hives (SYSTEM, SOFTWARE, DEFAULT - SAM/SECURITY excluded)",
+    "Linux environment snapshot (network/storage)",
+    "Windows Update logs",
+    "CBS logs (Component-Based Servicing)",
+    "DISM logs (Image servicing)",
+    "Panther logs (Windows Setup)",
+    "MoSetup logs (Windows Setup/Upgrade)",
+    "SetupAPI device installation logs",
+    "Startup Repair logs (SrtTrail when present)",
+    "NetSetup logs (domain join/network history)",
+    "BitLocker status",
+    "Disk health (SMART data)",
+    "Crash dumps (minidumps, MEMORY.DMP if < 500MB)"
+  ],
   "output": {
-    "format": "Bootable USB (GPT/FAT32/UEFI)",
-    "base_image": "Debian Live"
+    "format": "ZIP archive",
+    "naming": "Linux-Diag-{ComputerName}-{Serial}-{Timestamp}.zip",
+    "upload_url": "<<SERVERURL>>/upload"
   },
   "author": "jeamajoal",
   "license": "MIT"

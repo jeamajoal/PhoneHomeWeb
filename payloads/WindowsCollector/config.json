@@ -1,0 +1,68 @@
+{
+  "name": "WindowsCollector",
+  "endpoint": "windowscollector-installer",
+  "version": "1.0.0",
+  "description": "Online Windows diagnostic log collector for running systems. Collects comprehensive system diagnostics, event logs, registry hives, and system health data, then uploads to PhoneHomeWeb server.",
+  "serverUrl": "<<SERVERURL>>",
+  "downloadFolder": "WindowsCollector",
+  "mainScript": "Windows-Collector.ps1",
+  "installerScript": "install-windowscollector.ps1",
+  "parameters": [
+    {
+      "name": "UploadUrl",
+      "type": "string",
+      "description": "Full upload URL (e.g., https://server:3500/upload)"
+    },
+    {
+      "name": "AuthKey",
+      "type": "string",
+      "description": "Authentication key for secure upload"
+    },
+    {
+      "name": "Silent",
+      "type": "switch",
+      "description": "Run without interactive prompts (for EPM deployment)"
+    },
+    {
+      "name": "SkipUpload",
+      "type": "switch",
+      "description": "Collect logs only, do not upload"
+    },
+    {
+      "name": "OutputPath",
+      "type": "string",
+      "description": "Custom output directory for collected logs"
+    }
+  ],
+  "collectedData": [
+    "Event Logs (Application, System, Security, Setup, etc.)",
+    "Registry Hives (SYSTEM, SOFTWARE, DEFAULT - excludes SAM/SECURITY)",
+    "Windows Update logs (CBS, DISM, WindowsUpdate)",
+    "Setup logs (Panther, MoSetup, SetupAPI)",
+    "Crash dumps (Minidump, LiveKernelReports)",
+    "Network configuration (ipconfig, route, netstat, firewall)",
+    "Installed software and Windows features",
+    "Running processes and services",
+    "Scheduled tasks",
+    "Disk and storage health (SMART, BitLocker status)",
+    "Group Policy results (gpresult)",
+    "Windows Defender status and logs",
+    "Driver information",
+    "System information (systeminfo, msinfo32)",
+    "Recent Windows Error Reporting (WER)"
+  ],
+  "requirements": [
+    "Windows 10/11 or Windows Server 2016+",
+    "PowerShell 5.1+",
+    "Run as Administrator/SYSTEM for full collection",
+    "Network connectivity for upload"
+  ],
+  "deploymentMethods": [
+    "EPM/RMM push (runs as SYSTEM)",
+    "Interactive execution",
+    "Scheduled task",
+    "One-liner installer via web"
+  ],
+  "author": "jeamajoal",
+  "license": "MIT"
+}

@@ -59,6 +59,26 @@ Manual run:
 
 - `X:\WinPECollector\WinPE-Collector.ps1`
 
+## Collected Data
+
+The WinPE Collector gathers the following diagnostic data from offline Windows installations:
+
+| Category | Contents |
+|----------|----------|
+| **Event Logs** | All `.evtx` files from `Windows\System32\winevt\Logs` |
+| **Registry Hives** | SYSTEM, SOFTWARE, DEFAULT (SAM/SECURITY excluded for privacy) |
+| **Windows Update Logs** | `Windows\Logs\WindowsUpdate` |
+| **CBS Logs** | Component-Based Servicing (`Windows\Logs\CBS`) |
+| **DISM Logs** | Image servicing (`Windows\Logs\DISM`) |
+| **Setup Logs** | Panther, MoSetup, SetupAPI, SrtTrail, NetSetup |
+| **BitLocker Status** | Encryption state from manage-bde |
+| **BCD Configuration** | Boot Configuration Data from offline and WinPE stores |
+| **Windows Version** | Product name, build, edition from offline registry |
+| **Servicing Packages** | Installed KB updates from servicing inventory |
+| **Crash Dumps** | Minidumps, MEMORY.DMP (if < 500MB) |
+| **Drive Health** | Volume properties, partition details, disk info |
+| **WinPE Environment** | Network and storage snapshot of the boot environment |
+
 ## Notes
 
 - Drive letters assigned by the collector in WinPE are intended to be temporary for the WinPE session. The script does not write offline Windows `MountedDevices` mappings.

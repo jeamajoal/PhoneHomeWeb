@@ -699,6 +699,95 @@ app.get("/winpecollector-installer", (req, res) => {
   }
 });
 
+// Linux USB Builder installer endpoint (creates bootable Debian Live USB)
+app.get("/linux-usb-installer", (req, res) => {
+  try {
+    const installerPath = path.join(
+      payloadsDir,
+      "LinuxCollector",
+      "install-linux-usb-builder.sh"
+    );
+    let content = getFileWithParamOverwrite(req, res, "SERVERURL", SERVERURL, installerPath);
+    serveInstallerWithAuthKey(req, res, content, "install-linux-usb-builder.sh");
+  } catch (error) {
+    console.error('Error in /linux-usb-installer:', error.message);
+    res.status(500).json({ success: false, error: "Error loading installer" });
+  }
+});
+
+// Linux Collector installer endpoint (one-liner deployment for Debian Live)
+app.get("/linuxcollector-installer", (req, res) => {
+  try {
+    const installerPath = path.join(
+      payloadsDir,
+      "LinuxCollector",
+      "install-linuxcollector.sh"
+    );
+    let content = getFileWithParamOverwrite(req, res, "SERVERURL", SERVERURL, installerPath);
+    serveInstallerWithAuthKey(req, res, content, "install-linuxcollector.sh");
+  } catch (error) {
+    console.error('Error in /linuxcollector-installer:', error.message);
+    res.status(500).json({ success: false, error: "Error loading installer" });
+  }
+});
+
+// Windows Collector installer endpoint (online Windows log collection for EPM/RMM deployment)
+app.get("/windowscollector-installer", (req, res) => {
+  try {
+    const installerPath = path.join(
+      payloadsDir,
+      "WindowsCollector",
+      "install-windowscollector.ps1"
+    );
+    let content = getFileWithParamOverwrite(req, res, "SERVERURL", SERVERURL, installerPath);
+    serveInstallerWithAuthKey(req, res, content, "install-windowscollector.ps1");
+  } catch (error) {
+    console.error('Error in /windowscollector-installer:', error.message);
+    res.status(500).json({ success: false, error: "Error loading installer" });
+  }
+});
+
+// Linux Live-Pull Scripts (downloaded at runtime with credentials injected)
+// These scripts are meant to be executed from the Linux USB environment
+
+// Linux upload-file script - generic file upload helper
+app.get("/linux-upload-script", (req, res) => {
+  try {
+    const scriptPath = path.join(
+      payloadsDir,
+      "LinuxCollector",
+      "upload-file.sh"
+    );
+    if (!fs.existsSync(scriptPath)) {
+      return res.status(404).json({ success: false, error: "upload-file.sh not found" });
+    }
+    let content = getFileWithParamOverwrite(req, res, "SERVERURL", SERVERURL, scriptPath);
+    serveInstallerWithAuthKey(req, res, content, "upload-file.sh");
+  } catch (error) {
+    console.error('Error in /linux-upload-script:', error.message);
+    res.status(500).json({ success: false, error: "Error loading script" });
+  }
+});
+
+// Linux collect-windows-logs script - full Windows log collection from offline mount
+app.get("/linux-collect-logs", (req, res) => {
+  try {
+    const scriptPath = path.join(
+      payloadsDir,
+      "LinuxCollector",
+      "collect-windows-logs.sh"
+    );
+    if (!fs.existsSync(scriptPath)) {
+      return res.status(404).json({ success: false, error: "collect-windows-logs.sh not found" });
+    }
+    let content = getFileWithParamOverwrite(req, res, "SERVERURL", SERVERURL, scriptPath);
+    serveInstallerWithAuthKey(req, res, content, "collect-windows-logs.sh");
+  } catch (error) {
+    console.error('Error in /linux-collect-logs:', error.message);
+    res.status(500).json({ success: false, error: "Error loading script" });
+  }
+});
+
 // FileUpload endpoint
 app.get("/fileupload", (req, res) => {
     try {

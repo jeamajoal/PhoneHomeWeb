@@ -52,7 +52,7 @@ VERSION="1.0.0"
 WORK_DIR="/tmp/linux-collector"
 OUTPUT_DIR="$WORK_DIR/output"
 MOUNT_DIR="/mnt/windows"
-DISLOCKER_DIR="/mnt/dislocker"
+DISLOCKER_DIR="/mnt/bitlocker"
 
 # Colors for output
 RED='\033[0;31m'

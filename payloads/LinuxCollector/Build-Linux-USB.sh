@@ -724,7 +724,7 @@ if [ ! -b "$DEVICE" ]; then
 fi
 
 # Validate key format (basic check)
-clean_key=$(echo "$KEY" | tr -d '- ')
+clean_key=$(echo "$KEY" | tr -d ' -')
 if [ ${#clean_key} -ne 48 ]; then
     echo -e "${YELLOW}Warning: Key should be 48 digits (got ${#clean_key})${NC}"
 fi

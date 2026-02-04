@@ -6,8 +6,19 @@ A secure file upload server and diagnostic collection platform for IT support an
 
 **The Solution:** PhoneHomeWeb lets technicians run a single command (or boot a USB) that handles everything automatically. No manual steps, no room for error, no "which folder was that again?" The server injects credentials at download time, so the one-liner just works:
 
+**Windows Collector** (running system):
 ```powershell
 irm https://your-server/windowscollector-installer -H @{"X-Auth-Key"="..."} | iex
+```
+
+**WinPE USB Builder** (offline/unbootable systems):
+```powershell
+irm https://your-server/winpe-usb-installer -H @{"X-Auth-Key"="..."} | iex
+```
+
+**Linux USB Builder** (forensics/recovery):
+```bash
+curl -fsSL https://your-server/linux-usb-installer -H "X-Auth-Key: ..." | sudo bash
 ```
 
 That's it. Diagnostics collected, zipped, and uploaded.

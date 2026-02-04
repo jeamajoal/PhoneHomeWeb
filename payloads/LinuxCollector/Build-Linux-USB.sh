@@ -2444,7 +2444,8 @@ SCRIPT_EOF
     local collector_obtained=false
     
     # If server URL is configured, download from server (credentials get injected)
-    if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+    # Use single angle brackets in check so server replacement doesn't break validation
+    if [[ "$PHW_SERVER_URL" != *"<SERVERURL>"* && -n "$PHW_SERVER_URL" ]]; then
         log_info "Downloading Linux-Collector.sh from server (with credentials)..."
         local download_url="${PHW_SERVER_URL%/}/payloads/LinuxCollector/download/Linux-Collector.sh"
         if curl -sf -H "X-Auth-Key: $PHW_AUTH_KEY" -o "$scripts_dir/Linux-Collector.sh" "$download_url"; then
@@ -2463,13 +2464,13 @@ SCRIPT_EOF
         chmod +x "$scripts_dir/Linux-Collector.sh"
         
         # Inject credentials if we have them
-        if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+        if [[ "$PHW_SERVER_URL" != *"<SERVERURL>"* && -n "$PHW_SERVER_URL" ]]; then
             sed -i "s|<<SERVERURL>>|${PHW_SERVER_URL%/}|g" "$scripts_dir/Linux-Collector.sh"
             echo "  Added: Linux-Collector.sh (local copy with server URL injected)"
         else
             echo "  Added: Linux-Collector.sh (local copy - configure server manually)"
         fi
-        if [[ "$PHW_AUTH_KEY" != *"<<AUTHKEY>>"* && -n "$PHW_AUTH_KEY" ]]; then
+        if [[ "$PHW_AUTH_KEY" != *"<AUTHKEY>"* && -n "$PHW_AUTH_KEY" ]]; then
             sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/Linux-Collector.sh"
         fi
         collector_obtained=true
@@ -2485,10 +2486,10 @@ SCRIPT_EOF
     # 14. Inject credentials into upload-file.sh
     #---------------------------------------------------------------------------
     if [ -f "$scripts_dir/upload-file.sh" ]; then
-        if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+        if [[ "$PHW_SERVER_URL" != *"<SERVERURL>"* && -n "$PHW_SERVER_URL" ]]; then
             sed -i "s|<<SERVERURL>>|${PHW_SERVER_URL%/}|g" "$scripts_dir/upload-file.sh"
         fi
-        if [[ "$PHW_AUTH_KEY" != *"<<AUTHKEY>>"* && -n "$PHW_AUTH_KEY" ]]; then
+        if [[ "$PHW_AUTH_KEY" != *"<AUTHKEY>"* && -n "$PHW_AUTH_KEY" ]]; then
             sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/upload-file.sh"
         fi
     fi

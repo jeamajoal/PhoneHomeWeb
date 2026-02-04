@@ -2448,38 +2448,63 @@ SCRIPT_EOF
     if [[ "$PHW_SERVER_URL" != *"<SERVERURL>"* && -n "$PHW_SERVER_URL" ]]; then
         log_info "Downloading Linux-Collector.sh from server (with credentials)..."
         local download_url="${PHW_SERVER_URL%/}/payloads/LinuxCollector/download/Linux-Collector.sh"
-        if curl -sf -H "X-Auth-Key: $PHW_AUTH_KEY" -o "$scripts_dir/Linux-Collector.sh" "$download_url"; then
+        log_detail "URL: $download_url"
+        
+        # Use verbose curl to capture error details
+        local curl_output
+        local curl_exit
+        curl_output=$(curl -sS -w "\nHTTP_CODE:%{http_code}" \
+            -H "X-Auth-Key: $PHW_AUTH_KEY" \
+            -o "$scripts_dir/Linux-Collector.sh" \
+            --connect-timeout 10 \
+            --max-time 60 \
+            "$download_url" 2>&1)
+        curl_exit=$?
+        
+        local http_code
+        http_code=$(echo "$curl_output" | grep -o 'HTTP_CODE:[0-9]*' | cut -d: -f2)
+        
+        if [[ $curl_exit -eq 0 && "$http_code" == "200" ]]; then
             chmod +x "$scripts_dir/Linux-Collector.sh"
-            echo "  Added: Linux-Collector.sh (downloaded with embedded credentials)"
+            log_success "Linux-Collector.sh downloaded with embedded credentials"
             collector_obtained=true
         else
-            log_warn "Failed to download from server, falling back to local copy"
+            log_warn "Failed to download from server (HTTP: ${http_code:-unknown}, exit: $curl_exit)"
+            log_detail "curl output: $curl_output"
+            log_info "Falling back to local copy..."
+        fi
+    else
+        log_detail "Server URL not configured - using local copy"
+        if [[ "$PHW_SERVER_URL" == *"<SERVERURL>"* ]]; then
+            log_detail "PHW_SERVER_URL still contains placeholder (not replaced by server)"
         fi
     fi
     
     # Fallback: copy local file and inject credentials via sed
     if [[ "$collector_obtained" == "false" ]] && [ -f "$script_dir/Linux-Collector.sh" ]; then
-        log_info "Copying Linux-Collector.sh to scripts partition..."
+        log_info "Copying Linux-Collector.sh from local source..."
+        log_detail "Source: $script_dir/Linux-Collector.sh"
         cp "$script_dir/Linux-Collector.sh" "$scripts_dir/Linux-Collector.sh"
         chmod +x "$scripts_dir/Linux-Collector.sh"
         
         # Inject credentials if we have them
         if [[ "$PHW_SERVER_URL" != *"<SERVERURL>"* && -n "$PHW_SERVER_URL" ]]; then
             sed -i "s|<<SERVERURL>>|${PHW_SERVER_URL%/}|g" "$scripts_dir/Linux-Collector.sh"
-            echo "  Added: Linux-Collector.sh (local copy with server URL injected)"
-        else
-            echo "  Added: Linux-Collector.sh (local copy - configure server manually)"
-        fi
-        if [[ "$PHW_AUTH_KEY" != *"<AUTHKEY>"* && -n "$PHW_AUTH_KEY" ]]; then
             sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/Linux-Collector.sh"
+            log_success "Linux-Collector.sh copied with credentials injected"
+        else
+            log_warn "Linux-Collector.sh copied WITHOUT server credentials!"
+            log_warn "You will need to configure the server URL manually or run the online installer"
+            log_info "After booting, run: curl -fsSL https://<server>/linuxcollector-installer -H 'X-Auth-Key: <key>' | sudo bash"
         fi
         collector_obtained=true
     fi
     
-    # Warn if Linux-Collector.sh was not obtained
+    # Warn if Linux-Collector.sh was not obtained at all
     if [[ "$collector_obtained" == "false" ]]; then
-        log_warn "Linux-Collector.sh not available - use collect-windows-logs.sh instead"
-        log_warn "Or deploy collector after boot: curl -fsSL https://server/linuxcollector-installer | sudo bash"
+        log_warn "Linux-Collector.sh not available!"
+        log_info "Use collect-windows-logs.sh instead, or deploy collector after boot:"
+        log_info "  curl -fsSL https://<server>/linuxcollector-installer -H 'X-Auth-Key: <key>' | sudo bash"
     fi
     
     #---------------------------------------------------------------------------

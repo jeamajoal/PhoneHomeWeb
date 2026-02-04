@@ -354,17 +354,53 @@ unlock_bitlocker() {
     
     log_info "Unlocking BitLocker drive..."
     
-    # Create dislocker mount point
+    # Create dislocker mount point and ensure it's empty
     mkdir -p "$DISLOCKER_DIR"
     
-    # Run dislocker to create decrypted file
-    if ! dislocker "$partition" -p"$recovery_key" -- "$DISLOCKER_DIR" 2>&1; then
-        log_error "Failed to unlock BitLocker drive"
+    # Unmount if already mounted from a previous attempt
+    if mountpoint -q "$DISLOCKER_DIR" 2>/dev/null; then
+        log_warning "Dislocker mount point already in use, unmounting..."
+        umount "$DISLOCKER_DIR" 2>/dev/null || fusermount -u "$DISLOCKER_DIR" 2>/dev/null || true
+        sleep 1
+    fi
+    
+    # Run dislocker to create decrypted file (FUSE-based)
+    # Capture output for debugging
+    local dislocker_output
+    dislocker_output=$(dislocker "$partition" -p"$recovery_key" -- "$DISLOCKER_DIR" 2>&1)
+    local dislocker_exit=$?
+    
+    if [[ $dislocker_exit -ne 0 ]]; then
+        log_error "dislocker failed with exit code $dislocker_exit"
+        log_error "Output: $dislocker_output"
         log_info "Please verify the recovery key is correct"
         exit 1
     fi
     
+    # Give dislocker a moment to create the FUSE mount
+    sleep 2
+    
+    # Verify the dislocker-file was created (critical check)
+    if [[ ! -e "$DISLOCKER_DIR/dislocker-file" ]]; then
+        log_error "dislocker reported success but dislocker-file was not created"
+        log_detail "Expected file: $DISLOCKER_DIR/dislocker-file"
+        log_detail "Contents of $DISLOCKER_DIR:"
+        ls -la "$DISLOCKER_DIR" 2>&1 | while read line; do log_detail "  $line"; done
+        
+        # Check if it's a FUSE mount issue
+        if ! mountpoint -q "$DISLOCKER_DIR" 2>/dev/null; then
+            log_error "dislocker FUSE mount failed - $DISLOCKER_DIR is not a mount point"
+            log_info "Possible causes:"
+            log_info "  - FUSE not installed or not working (try: modprobe fuse)"
+            log_info "  - Wrong recovery key (try re-entering)"
+            log_info "  - BitLocker metadata corrupted on disk"
+        fi
+        
+        exit 1
+    fi
+    
     log_success "BitLocker drive unlocked"
+    log_detail "Decrypted partition available at: $DISLOCKER_DIR/dislocker-file"
     
     # The decrypted partition is now at $DISLOCKER_DIR/dislocker-file
     echo "$DISLOCKER_DIR/dislocker-file"
@@ -910,7 +946,8 @@ collect_disk_health() {
         # SMART data for each disk (if smartctl available)
         if command -v smartctl &>/dev/null; then
             echo "=== SMART Health Data ==="
-            for disk in /dev/sd? /dev/nvme?n? 2>/dev/null; do
+            shopt -s nullglob
+            for disk in /dev/sd? /dev/nvme?n?; do
                 if [[ -b "$disk" ]]; then
                     echo ""
                     echo "--- $disk ---"
@@ -918,6 +955,7 @@ collect_disk_health() {
                     smartctl -A "$disk" 2>&1 | head -30 || true
                 fi
             done
+            shopt -u nullglob
         else
             echo "smartctl not available - install smartmontools for SMART data"
         fi
@@ -926,13 +964,15 @@ collect_disk_health() {
         # NVMe health (if nvme-cli available)
         if command -v nvme &>/dev/null; then
             echo "=== NVMe Health ==="
-            for nvme in /dev/nvme?n? 2>/dev/null; do
+            shopt -s nullglob
+            for nvme in /dev/nvme?n?; do
                 if [[ -b "$nvme" ]]; then
                     echo ""
                     echo "--- $nvme ---"
                     nvme smart-log "$nvme" 2>&1 || echo "Could not read NVMe health for $nvme"
                 fi
             done
+            shopt -u nullglob
         fi
     } > "$disk_file"
     

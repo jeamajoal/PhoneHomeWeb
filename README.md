@@ -12,6 +12,12 @@ irm https://your-server/windowscollector-installer -H @{"X-Auth-Key"="..."} | ie
 
 That's it. Diagnostics collected, zipped, and uploaded. The technician gets a notification, the end user moves on with their day.
 
+> ⚠️ **Security is your responsibility.** The auth key is a shared secret—anyone who has it can upload files to your server. Treat it accordingly:
+> - **Roll your keys after every use** (or at least regularly). Generate a new key, update `.env`, restart the service.
+> - **Don't run the server 24/7** if you don't need to. Spin it up when collecting diagnostics, shut it down when you're done.
+> - **Always use TLS.** Self-signed certs are fine for testing, but use [Let's Encrypt](https://letsencrypt.org/) (it's free) for anything real.
+> - **Limit who has the key.** Share it per-session if possible, not as a permanent credential.
+
 ---
 
 ## What's Included

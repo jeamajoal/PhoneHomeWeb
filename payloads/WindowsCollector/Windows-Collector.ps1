@@ -982,18 +982,18 @@ function Invoke-Collection {
     $collectDir = Join-Path $WorkDir "Collection"
     New-Item -ItemType Directory -Path $collectDir -Force | Out-Null
     
-    # Run all collection functions
-    Collect-SystemInformation -OutputDir $collectDir
-    Collect-EventLogs -OutputDir $collectDir
-    Collect-RegistryHives -OutputDir $collectDir
-    Collect-WindowsLogs -OutputDir $collectDir
-    Collect-CrashDumps -OutputDir $collectDir
-    Collect-NetworkConfiguration -OutputDir $collectDir
-    Collect-ProcessesAndServices -OutputDir $collectDir
-    Collect-StorageAndDisk -OutputDir $collectDir
-    Collect-SecurityInfo -OutputDir $collectDir
-    Collect-DriverInfo -OutputDir $collectDir
-    Collect-ScheduledTasks -OutputDir $collectDir
+    # Run all collection functions (suppress any output to prevent polluting return value)
+    Collect-SystemInformation -OutputDir $collectDir | Out-Null
+    Collect-EventLogs -OutputDir $collectDir | Out-Null
+    Collect-RegistryHives -OutputDir $collectDir | Out-Null
+    Collect-WindowsLogs -OutputDir $collectDir | Out-Null
+    Collect-CrashDumps -OutputDir $collectDir | Out-Null
+    Collect-NetworkConfiguration -OutputDir $collectDir | Out-Null
+    Collect-ProcessesAndServices -OutputDir $collectDir | Out-Null
+    Collect-StorageAndDisk -OutputDir $collectDir | Out-Null
+    Collect-SecurityInfo -OutputDir $collectDir | Out-Null
+    Collect-DriverInfo -OutputDir $collectDir | Out-Null
+    Collect-ScheduledTasks -OutputDir $collectDir | Out-Null
     
     return $collectDir
 }

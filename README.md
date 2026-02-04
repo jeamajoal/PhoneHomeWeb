@@ -365,6 +365,47 @@ curl -fsSL "https://your-server:3500/linux-usb-installer" \
   -H "X-Auth-Key: your-auth-key" | sudo bash
 ```
 
+<details>
+<summary><strong>WSL USB Passthrough (usbipd-win)</strong></summary>
+
+If building from WSL, you need to pass the USB drive through to the Linux environment:
+
+1. **Install usbipd-win** (on Windows, run as Administrator):
+   ```powershell
+   winget install usbipd
+   ```
+
+2. **Install USB/IP tools in WSL**:
+   ```bash
+   sudo apt install linux-tools-generic hwdata
+   sudo update-alternatives --install /usr/local/bin/usbip usbip /usr/lib/linux-tools/*-generic/usbip 20
+   ```
+
+3. **List USB devices** (PowerShell as Administrator):
+   ```powershell
+   usbipd list
+   ```
+   Find your USB drive (e.g., `BUSID 2-3`).
+
+4. **Bind and attach the device**:
+   ```powershell
+   usbipd bind --busid 2-3
+   usbipd attach --wsl --busid 2-3
+   ```
+
+5. **Verify in WSL**:
+   ```bash
+   lsblk
+   ```
+   Your USB drive should appear (e.g., `/dev/sdb`).
+
+6. **After building**, detach the device:
+   ```powershell
+   usbipd detach --busid 2-3
+   ```
+
+</details>
+
 See [payloads/LinuxCollector/README.md](payloads/LinuxCollector/README.md) for full documentation.
 
 ---

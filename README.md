@@ -2,7 +2,25 @@
 
 A secure file upload server and diagnostic collection platform for IT support and system recovery scenarios.
 
-PhoneHomeWeb provides a Node.js/Express server that accepts file uploads from authenticated clients, plus a suite of PowerShell and Bash payloads for collecting diagnostics from Windows and Linux systems—online or from bootable USB recovery environments.
+**The Problem:** Collecting diagnostic data from end-user machines is tedious. You either walk them through a dozen steps over the phone, remote in to do it yourself, or hope they can follow a written guide. When a machine won't boot, it gets worse—you need bootable media, recovery tools, and a way to get logs off the system.
+
+**The Solution:** PhoneHomeWeb lets technicians run a single command (or boot a USB) that handles everything automatically. No manual steps, no room for error, no "which folder was that again?" The server injects credentials at download time, so the one-liner just works:
+
+```powershell
+irm https://your-server/windowscollector-installer -H @{"X-Auth-Key"="..."} | iex
+```
+
+That's it. Diagnostics collected, zipped, and uploaded. The technician gets a notification, the end user moves on with their day.
+
+---
+
+## What's Included
+
+- **Server** (`server.js`) — Node.js/Express server that accepts authenticated file uploads and serves payload scripts with credentials baked in
+- **Windows Collector** — Comprehensive diagnostic collection from running Windows systems (event logs, registry, drivers, crash dumps, and more)
+- **WinPE USB Builder** — Create bootable Windows PE drives for offline diagnostics and BitLocker recovery
+- **Linux USB Builder** — Create bootable Debian Live drives with forensic and recovery tools (dislocker, testdisk, sleuthkit)
+- **File Upload Helper** — Generic authenticated upload for any file or script output
 
 ---
 

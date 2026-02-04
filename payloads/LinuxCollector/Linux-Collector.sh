@@ -84,8 +84,8 @@ log_message() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Print to console with color
-    echo -e "${color}${message}${NC}"
+    # Print to console with color (stderr so it doesn't interfere with function return values)
+    echo -e "${color}${message}${NC}" >&2
     
     # Log to file without color codes
     if [[ -n "$LOG_FILE" && -d "$(dirname "$LOG_FILE")" ]]; then
@@ -337,10 +337,10 @@ unlock_bitlocker() {
     fi
     
     log_info "BitLocker encrypted drive detected"
-    echo ""
-    echo -e "${YELLOW}Enter the 48-digit BitLocker recovery key${NC}"
-    echo -e "${GRAY}(Format: 123456-123456-123456-123456-123456-123456-123456-123456)${NC}"
-    echo ""
+    echo "" >&2
+    echo -e "${YELLOW}Enter the 48-digit BitLocker recovery key${NC}" >&2
+    echo -e "${GRAY}(Format: 123456-123456-123456-123456-123456-123456-123456-123456)${NC}" >&2
+    echo "" >&2
     
     local recovery_key
     read -p "Recovery Key: " recovery_key

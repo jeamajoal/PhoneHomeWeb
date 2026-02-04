@@ -113,8 +113,13 @@ sudo ./Build-Linux-USB.sh --device /dev/sdb
 # Use a pre-downloaded Debian Live ISO
 sudo ./Build-Linux-USB.sh --device /dev/sdb --debian-iso ~/Downloads/debian-live.iso
 
-# Enable persistence (recommended if you want changes saved between boots)
-sudo ./Build-Linux-USB.sh --device /dev/sdb --with-persistence
+# Build with server credentials embedded in all scripts
+sudo ./Build-Linux-USB.sh --device /dev/sdb \
+    --server-url https://yourserver:3500 \
+    --auth-key your-auth-key
+
+# Download the builder from server and run with credentials auto-injected
+curl -fsSL https://yourserver:3500/linux-usb-installer -H 'X-Auth-Key: your-key' | sudo bash
 
 # Build without writing to USB (for testing customization)
 sudo ./Build-Linux-USB.sh --skip-write --keep-work
@@ -128,6 +133,8 @@ sudo ./Build-Linux-USB.sh --skip-write --keep-work
 | `--debian-iso PATH` | Path to Debian Live ISO. Downloaded if not provided. |
 | `--iso-url URL` | Direct URL to download a specific Debian Live ISO. |
 | `--iso-base-url URL` | Base URL for ISO directory listing (for interactive selection). |
+| `--server-url URL` | PhoneHomeWeb server URL. Scripts on the USB will have this URL embedded. |
+| `--auth-key KEY` | Authentication key for the server. Scripts will have this key embedded. |
 | `--with-persistence` | Create a persistence partition labeled `persistence`. |
 | `--persist-size SIZE` | Persistence partition size in MB (default: 512). |
 | `--skip-write` | Build customization only; do not write to USB. |
@@ -135,6 +142,12 @@ sudo ./Build-Linux-USB.sh --skip-write --keep-work
 | `--keep-work` | Do not delete working directory after build. |
 | `--non-interactive` | Do not prompt; exit if required options are missing. |
 | `-h, --help` | Show help message. |
+
+#### Credential Injection
+
+When you download `Build-Linux-USB.sh` from the server via the `/linux-usb-installer` endpoint, the server automatically injects your server URL and auth key into the script. This means all scripts written to the USB will have the correct credentials embedded.
+
+If you run the builder from a local copy (without downloading from server), use `--server-url` and `--auth-key` to embed credentials into the USB scripts.
 
 ## USB layout
 

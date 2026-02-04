@@ -56,6 +56,11 @@ set -euo pipefail
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# Server configuration (placeholders replaced at download time)
+# When downloaded from PhoneHomeWeb, these get the actual server URL and auth key
+PHW_SERVER_URL="${PHW_SERVER_URL:-<<SERVERURL>>}"
+PHW_AUTH_KEY="${PHW_AUTH_KEY:-<<AUTHKEY>>}"
+
 # Default ISO base URL (directory listing)
 DEFAULT_ISO_BASE_URL="https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/"
 DEFAULT_ISO_URL=""
@@ -163,6 +168,8 @@ Options:
   --work-dir PATH     Working directory for build files (default: /tmp/linux-usb-build).
   --keep-work         Do not delete working directory after build.
   --non-interactive   Do not prompt; exit if required options are missing.
+  --server-url URL    PhoneHomeWeb server URL (for downloading scripts with embedded credentials).
+  --auth-key KEY      Authentication key for PhoneHomeWeb server.
   -h, --help          Show this help message.
 
 Examples:
@@ -2430,15 +2437,53 @@ esac
 SCRIPT_EOF
 
     #---------------------------------------------------------------------------
-    # 13. Copy the main Linux-Collector.sh if it exists in same directory
+    # 13. Get Linux-Collector.sh (download from server or copy local)
     #---------------------------------------------------------------------------
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [ -f "$script_dir/Linux-Collector.sh" ]; then
+    local collector_obtained=false
+    
+    # If server URL is configured, download from server (credentials get injected)
+    if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+        log_info "Downloading Linux-Collector.sh from server (with credentials)..."
+        local download_url="${PHW_SERVER_URL%/}/payloads/LinuxCollector/download/Linux-Collector.sh"
+        if curl -sf -H "X-Auth-Key: $PHW_AUTH_KEY" -o "$scripts_dir/Linux-Collector.sh" "$download_url"; then
+            chmod +x "$scripts_dir/Linux-Collector.sh"
+            echo "  Added: Linux-Collector.sh (downloaded with embedded credentials)"
+            collector_obtained=true
+        else
+            log_warn "Failed to download from server, falling back to local copy"
+        fi
+    fi
+    
+    # Fallback: copy local file and inject credentials via sed
+    if [[ "$collector_obtained" == "false" ]] && [ -f "$script_dir/Linux-Collector.sh" ]; then
         log_info "Copying Linux-Collector.sh to scripts partition..."
         cp "$script_dir/Linux-Collector.sh" "$scripts_dir/Linux-Collector.sh"
         chmod +x "$scripts_dir/Linux-Collector.sh"
-        echo "  Added: Linux-Collector.sh (full diagnostic collector)"
+        
+        # Inject credentials if we have them
+        if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+            sed -i "s|<<SERVERURL>>|${PHW_SERVER_URL%/}|g" "$scripts_dir/Linux-Collector.sh"
+            echo "  Added: Linux-Collector.sh (local copy with server URL injected)"
+        else
+            echo "  Added: Linux-Collector.sh (local copy - configure server manually)"
+        fi
+        if [[ "$PHW_AUTH_KEY" != *"<<AUTHKEY>>"* && -n "$PHW_AUTH_KEY" ]]; then
+            sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/Linux-Collector.sh"
+        fi
+    fi
+    
+    #---------------------------------------------------------------------------
+    # 14. Inject credentials into upload-file.sh
+    #---------------------------------------------------------------------------
+    if [ -f "$scripts_dir/upload-file.sh" ]; then
+        if [[ "$PHW_SERVER_URL" != *"<<SERVERURL>>"* && -n "$PHW_SERVER_URL" ]]; then
+            sed -i "s|<<SERVERURL>>|${PHW_SERVER_URL%/}|g" "$scripts_dir/upload-file.sh"
+        fi
+        if [[ "$PHW_AUTH_KEY" != *"<<AUTHKEY>>"* && -n "$PHW_AUTH_KEY" ]]; then
+            sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/upload-file.sh"
+        fi
     fi
 
     # Make all scripts executable
@@ -3110,6 +3155,10 @@ main() {
                 keep_work=1; shift ;;
             --non-interactive)
                 non_interactive=1; shift ;;
+            --server-url)
+                PHW_SERVER_URL="$2"; shift 2 ;;
+            --auth-key)
+                PHW_AUTH_KEY="$2"; shift 2 ;;
             -h|--help)
                 usage; exit 0 ;;
             *)

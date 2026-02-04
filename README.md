@@ -429,6 +429,7 @@ PhoneHomeWeb implements defense-in-depth:
 5. **No Directory Listing** - Uploads directory is not browsable
 6. **TLS Support** - Native HTTPS for encrypted transport
 7. **systemd Hardening** - Service runs as dedicated user with restricted privileges
+8. **Protected Configuration** - `.env` file is chmod 640, readable only by service user/group
 
 **What gets logged:**
 
@@ -446,12 +447,25 @@ Blocked requests are logged separately with reason codes.
 
 You must set `AUTH_KEY` in `.env`:
 ```bash
-echo "AUTH_KEY=$(openssl rand -hex 32)" >> .env
+sudo nano /opt/PhoneHomeWeb/.env  # Add AUTH_KEY=your-key
+sudo systemctl restart phonehomeweb
+```
+
+**Can't edit .env file - "Permission denied"**
+
+After installation, `.env` is protected (chmod 640). Use `sudo` to edit:
+```bash
+sudo nano /opt/PhoneHomeWeb/.env
+sudo systemctl restart phonehomeweb
 ```
 
 **Upload fails with 413 "Payload Too Large"**
 
-Increase `MAX_UPLOAD_MB` in `.env` (default is 500 MB).
+Increase `MAX_UPLOAD_MB` in `.env` (default is 500 MB):
+```bash
+sudo sed -i 's/MAX_UPLOAD_MB=.*/MAX_UPLOAD_MB=1000/' /opt/PhoneHomeWeb/.env
+sudo systemctl restart phonehomeweb
+```
 
 **Windows Collector shows "Upload URL not configured"**
 

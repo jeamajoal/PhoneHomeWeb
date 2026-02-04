@@ -418,9 +418,9 @@ mount_windows_partition() {
     log_info "Mounting Windows partition..."
     
     # Try to mount read-only with ntfs-3g
-    if ! mount -t ntfs-3g -o ro,noexec "$mount_source" "$MOUNT_DIR" 2>&1; then
+    if ! mount -t ntfs-3g -o ro,noexec "$mount_source" "$MOUNT_DIR" 2>&1 >&2; then
         # Fallback to kernel NTFS driver
-        if ! mount -t ntfs -o ro "$mount_source" "$MOUNT_DIR" 2>&1; then
+        if ! mount -t ntfs -o ro "$mount_source" "$MOUNT_DIR" 2>&1 >&2; then
             log_error "Failed to mount Windows partition"
             exit 1
         fi
@@ -1303,7 +1303,7 @@ create_archive() {
     
     # Create zip archive
     cd "$OUTPUT_DIR" || exit 1
-    if ! zip -r "$zip_path" . -x "*.tmp" 2>&1; then
+    if ! zip -r "$zip_path" . -x "*.tmp" >&2; then
         log_error "Failed to create ZIP archive"
         exit 1
     fi

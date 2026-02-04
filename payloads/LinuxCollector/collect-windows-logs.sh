@@ -348,9 +348,9 @@ echo "Total size:      $total_size"
 echo "Archive:         $ZIP_PATH"
 echo ""
 
-# Upload if enabled
+# Upload if enabled (use single angle brackets so server doesn't replace these checks)
 if [ $NO_UPLOAD -eq 0 ]; then
-    if [[ "$SERVER_URL" == *"<<SERVERURL>>"* ]]; then
+    if [[ "$SERVER_URL" == *"<SERVERURL>"* ]] || [[ "$SERVER_URL" == "<<SERVERURL>>" ]]; then
         log_warn "Server URL not configured - skipping upload"
         log_info "To upload manually: curl -X POST -H 'X-Auth-Key: KEY' -F 'file=@$ZIP_PATH' URL/upload"
     else

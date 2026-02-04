@@ -10,7 +10,7 @@
 set -o pipefail
 
 # Server configuration (injected by server at download time)
-SERVER_URL="<<SERVERURL>>"
+SERVER_URL="<<SERVERURL>>/upload"
 AUTH_KEY="<<AUTHKEY>>"
 
 # Colors
@@ -72,17 +72,23 @@ if [ ! -e "$FILE" ]; then
     exit 1
 fi
 
-# Check for placeholder values
-if [[ "$SERVER_URL" == *"<<SERVERURL>>"* ]]; then
-    log_error "Server URL not configured"
-    log_info "This script should be downloaded from the server to get proper configuration"
-    log_info "Example: curl -sH 'X-Auth-Key: YOUR_KEY' https://server:3500/linux-upload-script | bash -s /path/to/file"
-    exit 1
+# Check for placeholder values (use single angle brackets so server doesn't replace these)
+if [[ "$SERVER_URL" == *"<SERVERURL>"* ]] || [[ "$SERVER_URL" == "<<SERVERURL>>" ]]; then
+    log_warn "Server URL not configured in script"
+    read -rp "Enter server URL (e.g., https://server:3500/upload): " SERVER_URL
+    if [ -z "$SERVER_URL" ]; then
+        log_error "Server URL is required"
+        exit 1
+    fi
 fi
 
-if [[ "$AUTH_KEY" == *"<<AUTHKEY>>"* ]] || [ -z "$AUTH_KEY" ]; then
-    log_error "Authentication key not configured"
-    exit 1
+if [[ "$AUTH_KEY" == *"<AUTHKEY>"* ]] || [[ "$AUTH_KEY" == "<<AUTHKEY>>" ]] || [ -z "$AUTH_KEY" ]; then
+    log_warn "Authentication key not configured in script"
+    read -rp "Enter authentication key: " AUTH_KEY
+    if [ -z "$AUTH_KEY" ]; then
+        log_error "Authentication key is required"
+        exit 1
+    fi
 fi
 
 # Handle directory uploads

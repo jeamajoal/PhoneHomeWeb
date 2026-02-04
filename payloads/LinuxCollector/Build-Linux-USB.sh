@@ -1401,13 +1401,13 @@ if [ ! -f "$FILE" ]; then
     exit 1
 fi
 
-# Check if server URL is still placeholder
-if [[ "$SERVER_URL" == *"<<SERVERURL>>"* ]]; then
+# Check if server URL is still placeholder (use single angle brackets so server doesn't replace these)
+if [[ "$SERVER_URL" == *"<SERVERURL>"* ]] || [[ "$SERVER_URL" == "<<SERVERURL>>" ]]; then
     echo -e "${YELLOW}Server URL not configured.${NC}"
     read -p "Enter server URL (e.g., https://server:3500/upload): " SERVER_URL
 fi
 
-if [[ "$AUTH_KEY" == *"<<AUTHKEY>>"* ]] || [ -z "$AUTH_KEY" ]; then
+if [[ "$AUTH_KEY" == *"<AUTHKEY>"* ]] || [[ "$AUTH_KEY" == "<<AUTHKEY>>" ]] || [ -z "$AUTH_KEY" ]; then
     echo -e "${YELLOW}Auth key not configured.${NC}"
     read -p "Enter authentication key: " AUTH_KEY
 fi

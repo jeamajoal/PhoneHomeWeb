@@ -268,6 +268,12 @@ cd /mnt/tools/scripts
 sudo ./Linux-Collector.sh
 ```
 
+**If `Linux-Collector.sh` isn't on the USB**, deploy it from the server:
+
+```bash
+curl -fsSL https://server:3500/linuxcollector-installer -H 'X-Auth-Key: KEY' | sudo bash
+```
+
 The collector will:
 1. Scan for Windows partitions (including BitLocker-encrypted)
 2. Prompt for BitLocker recovery key if needed
@@ -281,18 +287,23 @@ For manual operations, the USB includes these helper scripts in `/mnt/tools/scri
 
 | Script | Description |
 |--------|-------------|
-| `Linux-Collector.sh` | Full diagnostic collection (recommended) |
+| `Linux-Collector.sh` | Full diagnostic collection (if server was reachable during build) |
 | `detect-bitlocker.sh` | Scan for BitLocker-encrypted partitions |
 | `unlock-bitlocker.sh` | Unlock a BitLocker drive with recovery key |
 | `mount-windows.sh` | Mount Windows/NTFS partitions |
 | `disk-diagnostics.sh` | SMART health checks and disk info |
-| `collect-windows-logs.sh` | Collect logs from already-mounted Windows |
+| `collect-windows-logs.sh` | Collect logs from already-mounted Windows (always included) |
 | `upload-file.sh` | Upload any file to the server |
 | `system-info.sh` | Show hardware and system information |
 | `gpt-backup.sh` | Backup GPT partition tables |
 | `recover-data.sh` | File recovery with testdisk/photorec |
 | `network-setup.sh` | Configure network (DHCP/static IP) |
 | `boot-repair.sh` | Boot repair utilities |
+
+> **Note:** `Linux-Collector.sh` is downloaded from the server during USB build. If the server wasn't reachable, use `collect-windows-logs.sh` instead, or deploy the collector after booting:
+> ```bash
+> curl -fsSL https://server:3500/linuxcollector-installer -H 'X-Auth-Key: KEY' | sudo bash
+> ```
 
 **Example workflow using helper scripts:**
 

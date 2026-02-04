@@ -2472,6 +2472,13 @@ SCRIPT_EOF
         if [[ "$PHW_AUTH_KEY" != *"<<AUTHKEY>>"* && -n "$PHW_AUTH_KEY" ]]; then
             sed -i "s|<<AUTHKEY>>|$PHW_AUTH_KEY|g" "$scripts_dir/Linux-Collector.sh"
         fi
+        collector_obtained=true
+    fi
+    
+    # Warn if Linux-Collector.sh was not obtained
+    if [[ "$collector_obtained" == "false" ]]; then
+        log_warn "Linux-Collector.sh not available - use collect-windows-logs.sh instead"
+        log_warn "Or deploy collector after boot: curl -fsSL https://server/linuxcollector-installer | sudo bash"
     fi
     
     #---------------------------------------------------------------------------

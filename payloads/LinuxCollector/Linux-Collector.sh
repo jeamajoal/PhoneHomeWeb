@@ -939,6 +939,49 @@ collect_disk_health() {
     log_success "Disk health information collected"
 }
 
+collect_file_inventory() {
+    log_info "Collecting file inventory for all mounted partitions..."
+    
+    local inventory_dir="$OUTPUT_DIR/FileInventory"
+    mkdir -p "$inventory_dir"
+    
+    # Collect inventory for the mounted Windows partition
+    if [[ -d "$MOUNT_DIR" && -d "$MOUNT_DIR/Windows" ]]; then
+        log_detail "Scanning Windows partition at $MOUNT_DIR..."
+        local win_inventory="$inventory_dir/Inventory_Windows.txt"
+        
+        # Use find for full recursive listing
+        find "$MOUNT_DIR" -type f 2>/dev/null > "$win_inventory" || true
+        
+        local file_count
+        file_count=$(wc -l < "$win_inventory" 2>/dev/null || echo "0")
+        log_detail "  Windows partition: $file_count files"
+    fi
+    
+    # Also collect inventory for any other mounted NTFS partitions
+    local mount_point
+    while IFS= read -r mount_point; do
+        # Skip the main Windows mount we already did
+        [[ "$mount_point" == "$MOUNT_DIR" ]] && continue
+        
+        # Only process NTFS mounts that aren't system mounts
+        if [[ "$mount_point" =~ ^/mnt/ || "$mount_point" =~ ^/media/ ]]; then
+            local safe_name
+            safe_name=$(echo "$mount_point" | tr '/' '_' | sed 's/^_//')
+            local output_file="$inventory_dir/Inventory_${safe_name}.txt"
+            
+            log_detail "Scanning $mount_point..."
+            find "$mount_point" -type f 2>/dev/null > "$output_file" || true
+            
+            local file_count
+            file_count=$(wc -l < "$output_file" 2>/dev/null || echo "0")
+            log_detail "  $mount_point: $file_count files"
+        fi
+    done < <(mount | grep -E 'ntfs|fuseblk' | awk '{print $3}')
+    
+    log_success "File inventory collected"
+}
+
 #===============================================================================
 # Digital Forensics Collection (Optional)
 #===============================================================================
@@ -1404,6 +1447,7 @@ main() {
     collect_network_config
     collect_bitlocker_info
     collect_disk_health
+    collect_file_inventory
     
     # Forensic collection (optional artifacts)
     collect_forensic_artifacts

@@ -902,6 +902,42 @@ function Collect-ScheduledTasks {
     Write-Log "Scheduled tasks collected" "SUCCESS"
 }
 
+function Collect-FileInventory {
+    param([string]$OutputDir)
+    
+    Write-Section "File Inventory"
+    $inventoryDir = Join-Path $OutputDir "FileInventory"
+    New-Item -ItemType Directory -Path $inventoryDir -Force | Out-Null
+    
+    Write-Log "Collecting file inventory for all partitions..."
+    
+    # Get all fixed drives (local disks)
+    $drives = Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" | Select-Object -ExpandProperty DeviceID
+    
+    foreach ($drive in $drives) {
+        $driveLetter = $drive.TrimEnd(':')
+        $outputFile = Join-Path $inventoryDir "Inventory_${driveLetter}.txt"
+        
+        Write-Log "  Scanning $drive ..."
+        
+        try {
+            # Use cmd.exe dir /b /s for performance and compatibility
+            $cmdOutput = & cmd.exe /c "dir /b /s `"$drive\`" 2>nul"
+            if ($cmdOutput) {
+                $cmdOutput | Out-File -FilePath $outputFile -Encoding UTF8
+                $lineCount = ($cmdOutput | Measure-Object -Line).Lines
+                Write-Log "    $drive : $lineCount files/folders"
+            } else {
+                Write-Log "    $drive : No files found or access denied" "WARNING"
+            }
+        } catch {
+            Write-Log "    $drive : Error - $($_.Exception.Message)" "WARNING"
+        }
+    }
+    
+    Write-Log "File inventory collected" "SUCCESS"
+}
+
 # ============================================================================
 # Upload Function
 # ============================================================================
@@ -994,6 +1030,7 @@ function Invoke-Collection {
     Collect-SecurityInfo -OutputDir $collectDir | Out-Null
     Collect-DriverInfo -OutputDir $collectDir | Out-Null
     Collect-ScheduledTasks -OutputDir $collectDir | Out-Null
+    Collect-FileInventory -OutputDir $collectDir | Out-Null
     
     return $collectDir
 }

@@ -69,7 +69,7 @@ Write-Host ""
 
 # Download script
 Write-Host "Downloading Windows-Collector.ps1..." -ForegroundColor Cyan
-$scriptUrl = "$ServerUrl/payloads/WindowsCollector/Windows-Collector.ps1"
+$scriptUrl = "$ServerUrl/payloads/WindowsCollector/download/Windows-Collector.ps1"
 $tempScript = Join-Path $env:TEMP "Windows-Collector-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
 
 try {

@@ -228,7 +228,7 @@ check_root() {
 
 check_dependencies() {
     local missing=()
-    local deps=(lsblk parted mkfs.vfat mount umount rsync curl xorriso mksquashfs unsquashfs chroot)
+    local deps=(lsblk parted mkfs.vfat mount umount rsync curl xorriso mksquashfs unsquashfs chroot syslinux)
 
     for cmd in "${deps[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -242,7 +242,7 @@ check_dependencies() {
 
         apt-get update -y
         apt-get install -y --no-install-recommends \
-            parted dosfstools mount rsync curl xorriso squashfs-tools debootstrap
+            parted dosfstools mount rsync curl xorriso squashfs-tools debootstrap syslinux syslinux-common
 
         # Re-check
         for cmd in "${deps[@]}"; do
@@ -3059,6 +3059,84 @@ DESKTOP_FILE
     return 0
 }
 
+install_syslinux_bootloader() {
+    local usb_partition="$1"
+    local usb_mount="$2"
+    
+    log_info "Installing syslinux bootloader for legacy BIOS boot..."
+    
+    # Get the device from partition (e.g., /dev/sdi1 -> /dev/sdi)
+    local device="${usb_partition%[0-9]}"
+    # Handle nvme/mmcblk naming (e.g., /dev/nvme0n1p1 -> /dev/nvme0n1)
+    if [[ "$usb_partition" == *"p"[0-9]* ]]; then
+        device="${usb_partition%p[0-9]*}"
+    fi
+    
+    # Check if syslinux is available
+    if ! command -v syslinux &>/dev/null; then
+        log_warn "syslinux not found - legacy BIOS boot may not work"
+        log_info "Install with: apt-get install syslinux syslinux-common"
+        return 1
+    fi
+    
+    # Debian Live ISOs use isolinux - we need to convert to syslinux for USB
+    # Check for isolinux directory and copy config
+    if [[ -d "$usb_mount/isolinux" ]]; then
+        log_info "Converting isolinux to syslinux..."
+        
+        # Create syslinux directory if needed
+        mkdir -p "$usb_mount/syslinux"
+        
+        # Copy isolinux files to syslinux
+        cp -r "$usb_mount/isolinux/"* "$usb_mount/syslinux/" 2>/dev/null || true
+        
+        # Rename isolinux.cfg to syslinux.cfg
+        if [[ -f "$usb_mount/syslinux/isolinux.cfg" ]]; then
+            mv "$usb_mount/syslinux/isolinux.cfg" "$usb_mount/syslinux/syslinux.cfg"
+        fi
+        
+        # Update any references from isolinux to syslinux in config files
+        find "$usb_mount/syslinux" -name "*.cfg" -exec sed -i 's/isolinux/syslinux/g' {} \; 2>/dev/null || true
+        
+        log_success "Converted isolinux to syslinux"
+    fi
+    
+    # Install syslinux to partition
+    if command -v syslinux &>/dev/null; then
+        log_info "Installing syslinux to partition..."
+        syslinux --install "$usb_partition" 2>/dev/null || {
+            log_warn "syslinux installation to partition failed (may need extlinux for ext4)"
+        }
+    fi
+    
+    # Install MBR
+    local mbr_file=""
+    local mbr_locations=(
+        "/usr/lib/syslinux/mbr/mbr.bin"
+        "/usr/lib/syslinux/bios/mbr.bin"
+        "/usr/share/syslinux/mbr.bin"
+        "/usr/lib/SYSLINUX/mbr.bin"
+    )
+    
+    for mbr in "${mbr_locations[@]}"; do
+        if [[ -f "$mbr" ]]; then
+            mbr_file="$mbr"
+            break
+        fi
+    done
+    
+    if [[ -n "$mbr_file" ]]; then
+        log_info "Installing MBR from $mbr_file to $device..."
+        dd if="$mbr_file" of="$device" bs=440 count=1 conv=notrunc 2>/dev/null
+        log_success "MBR installed for legacy BIOS boot"
+    else
+        log_warn "MBR binary not found - legacy BIOS boot may not work"
+        log_info "The USB should still boot on UEFI systems via EFI/boot/bootx64.efi"
+    fi
+    
+    return 0
+}
+
 write_to_usb() {
     local extract_dir="$1"
     local usb_partition="$2"
@@ -3095,6 +3173,9 @@ write_to_usb() {
     else
         log_warn "EFI directory not found - USB may not boot on UEFI systems."
     fi
+    
+    # Install syslinux for legacy BIOS boot
+    install_syslinux_bootloader "$usb_partition" "$usb_mount"
 
     # Sync and unmount
     sync

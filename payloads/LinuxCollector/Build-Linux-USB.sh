@@ -153,6 +153,55 @@ die() {
 }
 
 # -----------------------------------------------------------------------------
+# Disk space helpers
+# -----------------------------------------------------------------------------
+
+df_avail_kb() {
+    local path="$1"
+    df -Pk "$path" 2>/dev/null | awk 'NR==2 {print $4}'
+}
+
+df_avail_inodes() {
+    local path="$1"
+    df -Pi "$path" 2>/dev/null | awk 'NR==2 {print $4}'
+}
+
+require_free_space() {
+    local path="$1"
+    local required_kb="$2"
+    local what="$3"
+
+    local avail_kb
+    avail_kb=$(df_avail_kb "$path")
+    if [[ -z "$avail_kb" ]]; then
+        die "Unable to determine free space for: $path"
+    fi
+
+    if (( avail_kb < required_kb )); then
+        local avail_gb required_gb
+        avail_gb=$(awk -v kb="$avail_kb" 'BEGIN{printf "%.1f", kb/1024/1024}')
+        required_gb=$(awk -v kb="$required_kb" 'BEGIN{printf "%.1f", kb/1024/1024}')
+        die "Not enough free space for ${what} in $path (have ${avail_gb}GB, need ~${required_gb}GB). Tip: in WSL, /tmp may be a small tmpfs; use --work-dir /mnt/c/linux-usb-build or --work-dir /mnt/d/linux-usb-build."
+    fi
+}
+
+require_free_inodes() {
+    local path="$1"
+    local required_inodes="$2"
+    local what="$3"
+
+    local avail_inodes
+    avail_inodes=$(df_avail_inodes "$path")
+    if [[ -z "$avail_inodes" ]]; then
+        die "Unable to determine free inodes for: $path"
+    fi
+
+    if (( avail_inodes < required_inodes )); then
+        die "Not enough free inodes for ${what} in $path (have $avail_inodes, need ~$required_inodes). Tip: pick a different --work-dir on a filesystem with more inodes."
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Usage
 # -----------------------------------------------------------------------------
 
@@ -2546,6 +2595,21 @@ customize_live_system() {
     local squashfs_edit="$work_dir/squashfs-edit"
 
     mkdir -p "$squashfs_mount" "$squashfs_edit"
+
+    # Preflight: ensure the work directory filesystem has enough space/inodes.
+    # unsquashfs expands the squashfs substantially and can easily exceed small /tmp tmpfs sizes in WSL.
+    local squash_kb
+    squash_kb=$(du -k "$squashfs_path" | awk '{print $1}')
+    # Heuristic: require at least 6x squashfs size, with a minimum of 20GB.
+    local required_kb
+    required_kb=$(( squash_kb * 6 ))
+    local min_kb=$(( 20 * 1024 * 1024 ))
+    if (( required_kb < min_kb )); then
+        required_kb="$min_kb"
+    fi
+    require_free_space "$work_dir" "$required_kb" "squashfs extraction"
+    # Inodes: Debian live extraction commonly needs a few hundred thousand.
+    require_free_inodes "$work_dir" 600000 "squashfs extraction"
 
     # Extract squashfs
     log_info "Extracting squashfs filesystem (this may take a while)..."

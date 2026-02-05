@@ -2596,6 +2596,16 @@ customize_live_system() {
 
     mkdir -p "$squashfs_mount" "$squashfs_edit"
 
+    # If re-running after a partial/failed extraction, unsquashfs can fail with
+    # "file ... already exists". Clean the edit directory to ensure a fresh build.
+    if [[ -d "$squashfs_edit" ]] && [[ -n "$(ls -A "$squashfs_edit" 2>/dev/null)" ]]; then
+        log_warn "Existing squashfs edit directory is not empty; cleaning for a fresh extraction: $squashfs_edit"
+        # Best-effort unmount in case something is unexpectedly mounted under it.
+        umount -R "$squashfs_edit" 2>/dev/null || true
+        rm -rf "$squashfs_edit"
+        mkdir -p "$squashfs_edit"
+    fi
+
     # Preflight: ensure the work directory filesystem has enough space/inodes.
     # unsquashfs expands the squashfs substantially and can easily exceed small /tmp tmpfs sizes in WSL.
     local squash_kb

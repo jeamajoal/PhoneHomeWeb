@@ -611,13 +611,16 @@ function serveInstallerWithAuthKey(req, res, filePathOrContent, filename = null)
       outputFilename = filename || "installer.ps1";
     }
 
-    // Replace all <<AUTHKEY>> placeholders with auth key from request header
-    // Caller MUST provide X-Auth-Key header - we don't inject server key automatically for security
+    // Placeholder injection:
+    // - <<AUTHKEY>> comes from the caller's X-Auth-Key header
+    // - <<SERVERURL>> comes from this server's configured SERVERURL
+    //
+    // NOTE: We do NOT invent an auth key; if the caller omits X-Auth-Key we inject an empty string.
     const authKey = req.get("X-Auth-Key") || "";
-    const updatedContent = fileContent.replace(
-      /<<AUTHKEY>>/g,
-      authKey
-    );
+    const serverUrl = (typeof SERVERURL === "string") ? SERVERURL : "";
+    const updatedContent = fileContent
+      .replace(/<<SERVERURL>>/g, serverUrl)
+      .replace(/<<AUTHKEY>>/g, authKey);
 
     // Set headers for PowerShell file download
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -625,6 +628,9 @@ function serveInstallerWithAuthKey(req, res, filePathOrContent, filename = null)
       "Content-Disposition",
       `inline; filename="${outputFilename}"`
     );
+
+    // Debug-friendly (does not leak secrets)
+    res.setHeader("X-Placeholders-Injected", "SERVERURL,AUTHKEY");
 
     // Send modified content
     res.send(updatedContent);
@@ -1155,7 +1161,7 @@ app.get("/payloads/:folder/download/:filename", (req, res) => {
             filePath,
             content
           );
-          serveInstallerWithAuthKey(req, res, content, filePath);
+          serveInstallerWithAuthKey(req, res, content, path.basename(filename));
         } else {
           res.status(404).json({
             success: false,

@@ -166,6 +166,11 @@ df_avail_inodes() {
     df -Pi "$path" 2>/dev/null | awk 'NR==2 {print $4}'
 }
 
+df_fs_type() {
+    local path="$1"
+    df -PT "$path" 2>/dev/null | awk 'NR==2 {print $2}'
+}
+
 require_free_space() {
     local path="$1"
     local required_kb="$2"
@@ -199,6 +204,21 @@ require_free_inodes() {
     if (( avail_inodes < required_inodes )); then
         die "Not enough free inodes for ${what} in $path (have $avail_inodes, need ~$required_inodes). Tip: pick a different --work-dir on a filesystem with more inodes."
     fi
+}
+
+require_linux_fs_for_extraction() {
+    local path="$1"
+    local fstype
+    fstype=$(df_fs_type "$path")
+
+    # In WSL, Windows drives mounted under /mnt/<drive> are typically 9p/drvfs.
+    # Extracting squashfs there can break symlinks/permissions/metadata and cause
+    # errors like "Too many levels of symbolic links".
+    case "$fstype" in
+        9p|drvfs)
+            die "The selected --work-dir is on a Windows-mounted filesystem ($fstype). Squashfs extraction/chroot customization requires a Linux filesystem. Use --work-dir /var/tmp/linux-usb-build or --work-dir \$HOME/linux-usb-build (on /), then rerun."
+            ;;
+    esac
 }
 
 # -----------------------------------------------------------------------------
@@ -2620,6 +2640,7 @@ customize_live_system() {
     require_free_space "$work_dir" "$required_kb" "squashfs extraction"
     # Inodes: Debian live extraction commonly needs a few hundred thousand.
     require_free_inodes "$work_dir" 600000 "squashfs extraction"
+    require_linux_fs_for_extraction "$work_dir"
 
     # Extract squashfs
     log_info "Extracting squashfs filesystem (this may take a while)..."

@@ -1,0 +1,10 @@
+# Enforce LF line endings for shell scripts (they must run on Linux/WSL)
+*.sh text eol=lf
+
+# Keep Windows PowerShell scripts as CRLF for best Windows compatibility
+*.ps1 text eol=crlf
+
+# JSON/YAML should be normalized
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

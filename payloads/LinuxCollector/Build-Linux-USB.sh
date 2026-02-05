@@ -2595,6 +2595,10 @@ SCRIPT_EOF
         fi
     fi
 
+    # Normalize line endings for Linux execution (in case source files were checked
+    # out with CRLF on Windows). CRLF breaks bash with "$'\r': command not found".
+    find "$scripts_dir" -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
+
     # Make all scripts executable
     chmod +x "$scripts_dir"/*.sh
 

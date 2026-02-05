@@ -418,9 +418,9 @@ mount_windows_partition() {
     log_info "Mounting Windows partition..."
     
     # Try to mount read-only with ntfs-3g
-    if ! mount -t ntfs-3g -o ro,noexec "$mount_source" "$MOUNT_DIR" 2>&1 >&2; then
+    if ! mount -t ntfs-3g -o ro,noexec "$mount_source" "$MOUNT_DIR" >&2 2>&1; then
         # Fallback to kernel NTFS driver
-        if ! mount -t ntfs -o ro "$mount_source" "$MOUNT_DIR" 2>&1 >&2; then
+        if ! mount -t ntfs -o ro "$mount_source" "$MOUNT_DIR" >&2 2>&1; then
             log_error "Failed to mount Windows partition"
             exit 1
         fi
@@ -1329,14 +1329,18 @@ upload_archive() {
     local response
     local http_code
     
+    rm -f /tmp/upload_curl_stderr.txt
     http_code=$(curl -s -o /tmp/upload_response.txt -w "%{http_code}" \
         -X POST \
         -H "X-Auth-Key: $AUTH_KEY" \
         -F "file=@$zip_path;filename=$zip_name" \
-        "$UPLOAD_URL" 2>&1)
+        "$UPLOAD_URL" 2>/tmp/upload_curl_stderr.txt)
     
     response=$(cat /tmp/upload_response.txt 2>/dev/null)
     rm -f /tmp/upload_response.txt
+    local curl_stderr
+    curl_stderr=$(cat /tmp/upload_curl_stderr.txt 2>/dev/null)
+    rm -f /tmp/upload_curl_stderr.txt
     
     if [[ "$http_code" == "200" || "$http_code" == "201" ]]; then
         log_success "Upload successful! (HTTP $http_code)"
@@ -1345,6 +1349,9 @@ upload_archive() {
     else
         log_error "Upload failed (HTTP $http_code)"
         log_detail "Response: $response"
+        if [[ -n "$curl_stderr" ]]; then
+            log_detail "curl stderr: $curl_stderr"
+        fi
         return 1
     fi
 }

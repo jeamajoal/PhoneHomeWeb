@@ -2594,17 +2594,17 @@ customize_live_system() {
     local squashfs_mount="$work_dir/squashfs-mount"
     local squashfs_edit="$work_dir/squashfs-edit"
 
-    mkdir -p "$squashfs_mount" "$squashfs_edit"
+    mkdir -p "$squashfs_mount"
 
-    # If re-running after a partial/failed extraction, unsquashfs can fail with
-    # "file ... already exists". Clean the edit directory to ensure a fresh build.
-    if [[ -d "$squashfs_edit" ]] && [[ -n "$(ls -A "$squashfs_edit" 2>/dev/null)" ]]; then
-        log_warn "Existing squashfs edit directory is not empty; cleaning for a fresh extraction: $squashfs_edit"
-        # Best-effort unmount in case something is unexpectedly mounted under it.
+    # Always reset the edit directory. Partial/failed extractions (or reruns with the
+    # same --work-dir) can leave files behind and cause unsquashfs to fail with
+    # "file ... already exists".
+    if [[ -e "$squashfs_edit" ]]; then
+        log_info "Resetting squashfs edit directory: $squashfs_edit"
         umount -R "$squashfs_edit" 2>/dev/null || true
         rm -rf "$squashfs_edit"
-        mkdir -p "$squashfs_edit"
     fi
+    mkdir -p "$squashfs_edit"
 
     # Preflight: ensure the work directory filesystem has enough space/inodes.
     # unsquashfs expands the squashfs substantially and can easily exceed small /tmp tmpfs sizes in WSL.
@@ -2623,7 +2623,7 @@ customize_live_system() {
 
     # Extract squashfs
     log_info "Extracting squashfs filesystem (this may take a while)..."
-    unsquashfs -d "$squashfs_edit" "$squashfs_path"
+    unsquashfs -f -d "$squashfs_edit" "$squashfs_path"
 
     # Prepare chroot
     log_info "Preparing chroot environment..."

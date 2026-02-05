@@ -25,6 +25,11 @@
 SERVER_URL="${SERVER_URL:-<<SERVERURL>>}"
 AUTH_KEY="${AUTH_KEY:-<<AUTHKEY>>}"
 
+# If the current working directory no longer exists (common when running from a
+# removed/unmounted path in WSL), many commands will emit getcwd errors.
+# Move to a safe directory early.
+cd / 2>/dev/null || true
+
 # Installation directory (user's home or /opt)
 if [[ -n "$SUDO_USER" ]]; then
     USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)

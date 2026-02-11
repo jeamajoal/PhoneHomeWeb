@@ -584,17 +584,35 @@ if (envBool("ENABLE_HEALTH_ENDPOINT", false)) {
 
 // Static key validation middleware - appears unresponsive without key
 app.use((req, res, next) => {
-  // Allow a single unauthenticated validation path (e.g., CA DCV file)
+  // Allow a single unauthenticated validation path (e.g., CA DCV file).
+  // DCV_VALIDATION_PATH must be an absolute URL path such as
+  //   /.well-known/pki-validation/ABC123.txt      (Sectigo HTTP DCV)
+  //   /.well-known/acme-challenge/<token>          (Let's Encrypt)
+  // The corresponding file must exist on disk at <project>/<dcvPath>.
   const dcvPath = envStr(
     "DCV_VALIDATION_PATH",
-    "/.well-known/pki-validation/12345.txt"
+    ""
   );
 
-  // Skip key validation for DCV SSL certificate validation
-  if (dcvPath && req.url.endsWith(dcvPath)) {
-    const dcvFileName = path.basename(dcvPath);
-    res.sendFile(path.join(__dirname, ".well-known", "pki-validation", dcvFileName));
+  // Skip key validation for DCV SSL certificate validation.
+  // Use an exact URL match (not endsWith) so crafted URLs can't abuse it.
+  if (dcvPath && req.url === dcvPath) {
+    // Resolve the file relative to the project root; reject traversal.
+    const dcvDiskPath = path.resolve(__dirname, dcvPath.replace(/^\/+/, ""));
+    const projectRoot = path.resolve(__dirname);
+    if (!dcvDiskPath.startsWith(projectRoot + path.sep)) {
+      console.log(`✗ DCV: Path traversal blocked for ${dcvPath}`);
+      console.log("=".repeat(80) + "\n");
+      return; // silent drop
+    }
+    if (!fs.existsSync(dcvDiskPath)) {
+      console.log(`✗ DCV: File not found on disk: ${dcvDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      return; // silent drop
+    }
+    console.log(`✓ DCV: Serving validation file ${dcvDiskPath}`);
     console.log("=".repeat(80) + "\n");
+    res.sendFile(dcvDiskPath);
     return; // Don't call next() - response already sent
   }
 

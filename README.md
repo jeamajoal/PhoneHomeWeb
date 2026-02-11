@@ -221,6 +221,76 @@ sudo chown phonehomeweb:phonehomeweb certs/*.pem
 sudo chmod 640 certs/*.pem
 ```
 
+**Commercial CA (Sectigo, DigiCert, Comodo, etc.):**
+
+When you purchase a certificate, the process works like this:
+
+1. **You generate a private key and CSR** (Certificate Signing Request) on your server
+2. **You submit the CSR** to your SSL provider
+3. **They send back** the signed certificate and CA bundle
+
+Your provider sends **two files that matter**:
+
+| File from provider | What it is | Use as |
+|---|---|---|
+| `yourdomain.crt` | Your server (leaf) certificate | `TLS_CERT_FILE` |
+| `yourdomain.bndl.crt` or `ca-bundle.crt` | Intermediate / root CA chain | `TLS_CA_FILE` |
+
+
+> ⚠️ **Generate your private key** You must generate a key + CSR pair and re-issue the certificate through your provider's account. Most CAs allow free re-issuance during the certificate's validity period:
+> ```bash
+> # Generate a new private key and CSR
+> openssl req -new -newkey rsa:2048 -nodes \
+>   -keyout yourdomain.key \
+>   -out yourdomain.csr \
+>   -subj "/CN=yourdomain.com"
+> ```
+> Submit the new `.csr` file to your provider to re-issue.
+
+**Option A — Separate files (recommended):**
+
+```bash
+# Copy your 3 files into the certs directory
+sudo cp yourdomain.key        /opt/phonehomeweb/certs/
+sudo cp yourdomain.crt        /opt/phonehomeweb/certs/
+sudo cp yourdomain.bndl.crt   /opt/phonehomeweb/certs/
+sudo chown phonehomeweb:phonehomeweb /opt/phonehomeweb/certs/*
+sudo chmod 640 /opt/phonehomeweb/certs/*
+```
+
+Update `.env`:
+
+```dotenv
+DISABLE_SSL=false
+SERVER_URL=https://yourdomain.com:3500
+TLS_KEY_FILE=yourdomain.key
+TLS_CERT_FILE=yourdomain.crt
+TLS_CA_FILE=yourdomain.bndl.crt
+```
+
+The server automatically appends the CA bundle to the certificate chain at startup.
+
+**Option B — Create a fullchain file yourself:**
+
+```bash
+# Concatenate server cert + CA bundle into one fullchain file
+cat yourdomain.crt yourdomain.bndl.crt > yourdomain.fullchain.crt
+sudo cp yourdomain.key            /opt/phonehomeweb/certs/
+sudo cp yourdomain.fullchain.crt  /opt/phonehomeweb/certs/
+sudo chown phonehomeweb:phonehomeweb /opt/phonehomeweb/certs/*
+sudo chmod 640 /opt/phonehomeweb/certs/*
+```
+
+```dotenv
+DISABLE_SSL=false
+SERVER_URL=https://yourdomain.com:3500
+TLS_KEY_FILE=yourdomain.key
+TLS_CERT_FILE=yourdomain.fullchain.crt
+# TLS_CA_FILE not needed — chain is already in TLS_CERT_FILE
+```
+
+> 💡 **Verify after restart:** The server logs the certificate's Subject and SANs at startup. Confirm the Subject shows your domain, not `localhost` or a test name. If it shows the wrong CN, your `.env` may still point at a leftover self-signed certificate — update `TLS_KEY_FILE` and `TLS_CERT_FILE` to your CA-issued files.
+
 ### Self-Signed Certificates (Development/Testing)
 
 For testing or internal networks, generate self-signed certificates:
@@ -552,6 +622,17 @@ The script wasn't downloaded through the credential-injecting endpoint. Use:
 ```powershell
 Invoke-RestMethod -Uri "https://server/windowscollector-installer" -Headers @{"X-Auth-Key"="..."} | iex
 ```
+
+**Clients see CN=localhost or wrong certificate after switching to CA-issued certs**
+
+The server logs the certificate Subject and SANs at startup. If it shows `CN=localhost`, your `.env` still points at a leftover self-signed certificate. Update `TLS_KEY_FILE` and `TLS_CERT_FILE` to your CA-issued files and restart:
+```bash
+sudo nano /opt/phonehomeweb/.env   # Update TLS_KEY_FILE, TLS_CERT_FILE, TLS_CA_FILE
+sudo systemctl restart phonehomeweb
+sudo systemctl status phonehomeweb  # Verify Subject shows your domain
+```
+
+Also confirm `TLS_CA_FILE` is set to your intermediate/CA bundle file (e.g. `yourdomain.bndl.crt`). Without the chain, some clients won't trust the certificate.
 
 **Certificate errors with self-signed certs**
 

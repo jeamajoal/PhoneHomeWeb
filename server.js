@@ -162,8 +162,12 @@ function sanitizePath(userInput) {
     throw new Error('Invalid path input');
   }
   
-  // LOOP Normalize and remove any leading path traversal
+  // Normalize and strip any path traversal sequences (limit iterations to prevent abuse)
+  let sanitizeIter = 0;
   while (userInput.includes('..') || path.isAbsolute(userInput)) {
+    if (++sanitizeIter > 5) {
+      throw new Error('Path traversal attempt detected');
+    }
     userInput = path.normalize(userInput).replace(/^(\.\.[\/\\])+/, '');
     
     // Reject if still contains path traversal or is absolute
@@ -185,13 +189,9 @@ function sanitizeFilename(filename) {
     throw new Error('Invalid filename');
   }
   
-  // LOOP Remove path separators, control characters, and dangerous characters
-  while (/[\/\\:*?"<>|\r\n\x00-\x1f\x7f]/.test(filename)) {
-    filename = filename.replace(/[\/\\:*?"<>|\r\n\x00-\x1f\x7f]/g, '_');
-  }
+  // Remove path separators, control characters, and dangerous characters
+  filename = filename.replace(/[\/\\:*?"<>|\r\n\x00-\x1f\x7f]/g, '_');
 
-
-  
   // Ensure it's not empty after sanitization
   if (!filename || filename.trim() === '') {
     throw new Error('Invalid filename after sanitization');
@@ -214,6 +214,22 @@ const HT_STATIC_KEY = envStr("AUTH_KEY_HIGH_TRUST", ""); // High-trust key for s
 if (!STATIC_KEY) {
   console.error("Missing required env var AUTH_KEY. Configure it in .env before starting the server.");
   process.exit(1);
+}
+
+// Timing-safe key comparison to prevent timing attacks.
+// Returns false when either value is empty, which also guards against
+// matching an unconfigured HT_STATIC_KEY ("") with an empty header.
+function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length === 0 || b.length === 0) return false;
+  try {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
 }
 
 // CORS
@@ -239,16 +255,23 @@ app.use((req, res, next) => {
   res.setHeader("Server", "PhoneHomeWeb"); // Generic server name
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  // X-XSS-Protection "1" is deprecated and can introduce vulnerabilities in
+  // some browsers.  "0" disables it; rely on Content-Security-Policy instead.
+  res.setHeader("X-XSS-Protection", "0");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader(
     "Permissions-Policy",
     "geolocation=(), microphone=(), camera=()"
   );
+  // HSTS: tell browsers to always use HTTPS (checked at request time so the
+  // header is only sent when the server is actually running with TLS).
+  if (req.secure || req.headers["x-forwarded-proto"] === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   next();
 });
 
-// TLS/SSL Configuration following W3Schools TLS documentation
+// TLS/SSL Configuration (TLS 1.2+, strong ciphers, PFS)
 const TLS_CONFIG = {
   // Use strong TLS versions only
   minVersion: "TLSv1.2",
@@ -297,6 +320,26 @@ const keyPath = resolveIfSet(certsDir, tlsKeyFile);
 const certPath = resolveIfSet(certsDir, tlsCertFile);
 const caPath = resolveIfSet(certsDir, tlsCaFile);
 const pfxPath = resolveIfSet(certsDir, tlsPfxFile);
+
+// Helper: log certificate subject/SAN details at startup so operators can
+// verify the correct certificate is loaded (guards against loading a leftover
+// self-signed cert with CN=localhost when a CA-issued cert was intended).
+function logCertDetails(certPem, label) {
+  try {
+    if (crypto.X509Certificate) {
+      const x509 = new crypto.X509Certificate(certPem);
+      console.log(`  ${label}:`);
+      console.log(`    Subject: ${x509.subject}`);
+      console.log(`    Issuer:  ${x509.issuer}`);
+      console.log(`    Valid:   ${x509.validFrom} \u2192 ${x509.validTo}`);
+      if (x509.subjectAltName) {
+        console.log(`    SANs:    ${x509.subjectAltName}`);
+      }
+    }
+  } catch (e) {
+    // crypto.X509Certificate not available (Node < 15) or cert parse error
+  }
+}
 
 // Check if SSL is disabled via environment variable
 const disableSSL = envBool("DISABLE_SSL", false);
@@ -364,23 +407,34 @@ if (!disableSSL) {
   ) {
     try {
       // Load CA-issued certificates with TLS configuration
+      // Read the server certificate as text so we can append the CA bundle
+      let certContent = fs.readFileSync(certPath, "utf8");
+
+      // If a CA bundle / intermediate chain file is provided, append it to the
+      // server certificate to form the full chain.  Node.js TLS expects the
+      // complete chain (leaf cert -> intermediates) in the `cert` option.
+      // Without the intermediates, browsers may show an untrusted certificate
+      // or display the wrong CN to the client.
+      let caChainLoaded = false;
+      if (caPath && fs.existsSync(caPath)) {
+        const caContent = fs.readFileSync(caPath, "utf8");
+        certContent = certContent.trimEnd() + "\n" + caContent.trimStart();
+        caChainLoaded = true;
+      }
+
       sslOptions = {
         ...TLS_CONFIG,
         key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath),
+        cert: certContent,
       };
-
-      // Add CA bundle if available (required for most CA-issued certificates)
-      if (caPath && fs.existsSync(caPath)) {
-        sslOptions.ca = fs.readFileSync(caPath);
-      }
 
       console.log("\n" + "=".repeat(80));
       console.log("SSL CERTIFICATES LOADED");
       console.log("=".repeat(80));
-      console.log(`Private key: ${keyPath}`);
-      console.log(`Certificate: ${certPath}`);
-      console.log(`CA Bundle: ${caPath && fs.existsSync(caPath) ? caPath : "Not found"}`);
+      console.log(`Private key:    ${keyPath}`);
+      console.log(`Certificate:    ${certPath}`);
+      console.log(`CA chain file:  ${caChainLoaded ? caPath + " (appended to cert chain)" : "Not provided - ensure TLS_CERT_FILE contains the full chain"}`);
+      logCertDetails(fs.readFileSync(certPath, "utf8"), "Leaf certificate");
       console.log("=".repeat(80) + "\n");
     } catch (error) {
       console.log("\n" + "=".repeat(80));
@@ -456,8 +510,8 @@ const upload = multer({
   },
 });
 
-// Middleware to parse JSON
-app.use(express.json());
+// Middleware to parse JSON (file uploads go through multer, not this parser)
+app.use(express.json({ limit: "1mb" }));
 
 // Request logging middleware - structured and non-blocking
 app.use((req, res, next) => {
@@ -469,7 +523,7 @@ app.use((req, res, next) => {
   res.setHeader("X-Request-Id", requestId);
 
   const clientIP =
-    req.ip || req.connection?.remoteAddress || req.headers["x-forwarded-for"];
+    req.ip || req.socket?.remoteAddress || req.headers["x-forwarded-for"];
   const userAgent = req.get("User-Agent") || "Unknown";
   const contentLength = req.get("Content-Length") || null;
 
@@ -516,7 +570,7 @@ app.use((req, res, next) => {
 if (envBool("ENABLE_HEALTH_ENDPOINT", false)) {
   app.get("/api/health", (req, res) => {
     const k = req.get("X-Auth-Key");
-    if (k !== STATIC_KEY && k !== HT_STATIC_KEY) {
+    if (!safeEqual(k, STATIC_KEY) && !safeEqual(k, HT_STATIC_KEY)) {
       // Avoid advertising the endpoint; match the project's "quiet" posture.
       return res.status(404).end();
     }
@@ -550,14 +604,14 @@ app.use((req, res, next) => {
   // Set high-trust flag on request object (so endpoints can access it)
   req.isHighTrust = false;
   
-  if (keyFromHeader == HT_STATIC_KEY) {
+  if (safeEqual(keyFromHeader, HT_STATIC_KEY)) {
     req.isHighTrust = true;
     console.log(`✓ AUTH: High-trust key provided`);
     console.log("=".repeat(80) + "\n");
     return next();
   }
 
-  if (keyFromHeader == STATIC_KEY) {
+  if (safeEqual(keyFromHeader, STATIC_KEY)) {
     console.log(`✓ AUTH: Valid key provided`);
     console.log("=".repeat(80) + "\n");
     return next();
@@ -575,13 +629,19 @@ app.use((req, res, next) => {
     method: req.method,
     url: req.originalUrl || req.url,
     host: req.hostname,
-    ip: req.ip || req.connection?.remoteAddress || req.headers["x-forwarded-for"],
+    ip: req.ip || req.socket?.remoteAddress || req.headers["x-forwarded-for"],
     ua: req.get("User-Agent") || "Unknown",
     reason: "missing_or_invalid_x_auth_key",
   });
 
-  // Intentionally don't send any response - appears unresponsive
-  setTimeout(() => {}, Math.random() * 1000);
+  // Tarpit: hold the connection open silently to waste the attacker's
+  // resources (threads, sockets, scanner slots).  A random 60-120 s delay
+  // is long enough to seriously slow automated scanners while eventually
+  // reclaiming our own file descriptor.
+  const dropDelay = 60000 + Math.floor(Math.random() * 60000);
+  setTimeout(() => {
+    try { req.destroy(); } catch { /* already closed */ }
+  }, dropDelay);
   return; // Silent drop
 });
 
@@ -590,7 +650,11 @@ app.get("/", (req, res) => {
   // Log the request but don't send any response - appears unresponsive
   console.log(`⚠ PROBE: Root endpoint accessed (no response sent)`);
   console.log("=".repeat(80) + "\n");
-  // Intentionally don't call res.json(), res.send(), or res.end()
+  // Tarpit: hold the connection open silently to waste scanner resources.
+  const dropDelay = 60000 + Math.floor(Math.random() * 60000);
+  setTimeout(() => {
+    try { req.destroy(); } catch { /* already closed */ }
+  }, dropDelay);
 });
 
 // Helper function to serve installer files with auth key replacement
@@ -661,8 +725,10 @@ function getFileWithParamOverwrite(req, res, paramName, value, filePathOrContent
     // Replace all <<ParamName>> placeholders with actual value
     // Handle undefined/null values by converting to empty string
     const replacementValue = (value !== undefined && value !== null) ? value : '';
+    // Escape paramName so regex-special characters don't cause injection
+    const escaped = paramName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const updatedContent = content.replace(
-      new RegExp(`<<${paramName}>>`, "g"),
+      new RegExp(`<<${escaped}>>`, "g"),
       replacementValue
     );
 
@@ -858,7 +924,9 @@ app.get("/winpe-drivers", (req, res) => {
         const drivers = [];
         
         // Recursive function to find all driver packages (folders containing .inf files)
-        function findDriverPackages(basePath, relativePath = '') {
+        const MAX_DEPTH = 10;
+        function findDriverPackages(basePath, relativePath = '', depth = 0) {
+            if (depth > MAX_DEPTH) return;
             const items = fs.readdirSync(basePath);
             
             // Check if current folder has .inf files (is a driver package)
@@ -909,7 +977,7 @@ app.get("/winpe-drivers", (req, res) => {
             for (const subdir of subdirs) {
                 const subdirPath = path.join(basePath, subdir);
                 const newRelativePath = relativePath ? `${relativePath}/${subdir}` : subdir;
-                findDriverPackages(subdirPath, newRelativePath);
+                findDriverPackages(subdirPath, newRelativePath, depth + 1);
             }
         }
         
@@ -1031,7 +1099,6 @@ app.get("/uploads", (req, res) => {
 // List available payloads
 app.get("/payloads", (req, res) => {
   try {
-    const payloadsDir = path.join(__dirname, "payloads");
     if (!fs.existsSync(payloadsDir)) {
       return res.status(404).json({
         success: false,
@@ -1140,9 +1207,10 @@ app.get("/payloads/:folder/download/:filename", (req, res) => {
           // IMPORTANT: Never run placeholder replacement on binary files (e.g., .zip)
           // because reading as UTF-8 and rewriting will corrupt the file.
           if (!textExts.has(ext)) {
+            const safeName = sanitizeFilename(path.basename(filename));
             res.setHeader(
               "Content-Disposition",
-              `attachment; filename="${path.basename(filename)}"`
+              `attachment; filename="${safeName}"`
             );
             return res.sendFile(resolvedPath);
           }
@@ -1332,5 +1400,4 @@ if (sslOptions) {
     console.log("Waiting for requests...\n");
   });
 }
-
 

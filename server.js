@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const express = require("express");
 const multer = require("multer");
@@ -320,16 +320,16 @@ app.use((req, res, next) => {
     const dcvDiskPath = path.resolve(__dirname, dcvPath.replace(/^\/+/, ""));
     const projectRoot = path.resolve(__dirname);
     if (!dcvDiskPath.startsWith(projectRoot + path.sep)) {
-      console.log(`âœ— DCV: Path traversal blocked for ${dcvPath}`);
+      console.log(`[X] DCV: Path traversal blocked for ${dcvPath}`);
       console.log("=".repeat(80) + "\n");
       return; // silent drop
     }
     if (!fs.existsSync(dcvDiskPath)) {
-      console.log(`âœ— DCV: File not found on disk: ${dcvDiskPath}`);
+      console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
       console.log("=".repeat(80) + "\n");
       return; // silent drop
     }
-    console.log(`âœ“ DCV: Serving validation file ${dcvDiskPath}`);
+    console.log(`[OK] DCV: Serving validation file ${dcvDiskPath}`);
     console.log("=".repeat(80) + "\n");
     res.sendFile(dcvDiskPath);
     return; // Don't call next() - response already sent
@@ -340,22 +340,32 @@ app.use((req, res, next) => {
   
   // Set high-trust flag on request object (so endpoints can access it)
   req.isHighTrust = false;
-  
+
+  // Debug: log key comparison details (lengths + first/last char codes) so
+  // operators can spot encoding mismatches without leaking full secrets.
+  if (envBool("DEBUG_AUTH", false) && keyFromHeader != null) {
+    const hdrHex = Buffer.from(keyFromHeader).toString("hex");
+    const envHex = Buffer.from(STATIC_KEY).toString("hex");
+    console.log(`[DEBUG AUTH] header  len=${keyFromHeader.length} hex=${hdrHex}`);
+    console.log(`[DEBUG AUTH] envKey  len=${STATIC_KEY.length} hex=${envHex}`);
+    console.log(`[DEBUG AUTH] match=${hdrHex === envHex}`);
+  }
+
   if (safeEqual(keyFromHeader, HT_STATIC_KEY)) {
     req.isHighTrust = true;
-    console.log(`âœ“ AUTH: High-trust key provided`);
+    console.log(`[OK] AUTH: High-trust key provided`);
     console.log("=".repeat(80) + "\n");
     return next();
   }
 
   if (safeEqual(keyFromHeader, STATIC_KEY)) {
-    console.log(`âœ“ AUTH: Valid key provided`);
+    console.log(`[OK] AUTH: Valid key provided`);
     console.log("=".repeat(80) + "\n");
     return next();
   }
 
   // Log unauthorized access attempt but don't respond
-  console.log(`âœ— BLOCKED: No valid authentication key`);
+  console.log(`[X] BLOCKED: No valid authentication key (header ${keyFromHeader == null ? "missing" : "len=" + keyFromHeader.length})`);
   console.log("=".repeat(80) + "\n");
 
   // Dedicated blocked log (JSONL)

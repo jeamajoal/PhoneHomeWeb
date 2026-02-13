@@ -31,7 +31,7 @@ module.exports = function registerRoutes(app, deps) {
   // Root endpoint - appears unresponsive (tarpit for scanners)
   // ---------------------------------------------------------------------------
   app.get("/", (req, res) => {
-    console.log(`⚠ PROBE: Root endpoint accessed (no response sent)`);
+    console.log(`[!] PROBE: Root endpoint accessed (no response sent)`);
     console.log("=".repeat(80) + "\n");
     const dropDelay = 60000 + Math.floor(Math.random() * 60000);
     setTimeout(() => {
@@ -172,7 +172,7 @@ module.exports = function registerRoutes(app, deps) {
   });
 
   // ---------------------------------------------------------------------------
-  // WinPE Drivers — hierarchical list of driver packages
+  // WinPE Drivers -- hierarchical list of driver packages
   // ---------------------------------------------------------------------------
   app.get("/winpe-drivers", (req, res) => {
     try {
@@ -280,7 +280,7 @@ module.exports = function registerRoutes(app, deps) {
       };
 
       console.log("=".repeat(80));
-      console.log(`  ✓ UPLOAD SUCCESS:`);
+      console.log(`  [OK] UPLOAD SUCCESS:`);
       console.log(`    Original: ${req.file.originalname}`);
       console.log(`    Saved As: ${req.file.filename}`);
       console.log(`    Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
@@ -298,7 +298,7 @@ module.exports = function registerRoutes(app, deps) {
   // ---------------------------------------------------------------------------
   app.get("/uploads", (req, res) => {
     if (req.isHighTrust !== true) {
-      console.log(`✗ BLOCKED: Download requires high-trust authentication key`);
+      console.log(`[X] BLOCKED: Download requires high-trust authentication key`);
       console.log("=".repeat(80) + "\n");
       return res.status(403).json({
         success: false,
@@ -384,7 +384,7 @@ module.exports = function registerRoutes(app, deps) {
       const resolvedPayloadsDir = path.resolve(payloadsDir);
       if (!resolvedPath.startsWith(resolvedPayloadsDir)) {
         console.log(
-          `✗ BLOCKED: Path traversal attempt detected: ${req.params.folder}/${req.params.filename}`
+          `[X] BLOCKED: Path traversal attempt detected: ${req.params.folder}/${req.params.filename}`
         );
         return res.status(403).json({ success: false, error: "Access denied" });
       }
@@ -420,7 +420,7 @@ module.exports = function registerRoutes(app, deps) {
   // ---------------------------------------------------------------------------
   app.get("/download", (req, res) => {
     if (req.isHighTrust !== true) {
-      console.log(`✗ BLOCKED: Download requires high-trust authentication key`);
+      console.log(`[X] BLOCKED: Download requires high-trust authentication key`);
       console.log("=".repeat(80) + "\n");
       return res.status(403).json({
         success: false,
@@ -435,15 +435,15 @@ module.exports = function registerRoutes(app, deps) {
     const filenameHeader = req.get("X-Filename");
 
     try {
-      console.log(`  ✓ DOWNLOAD REQUEST for file: ${filenameHeader}`);
+      console.log(`  [OK] DOWNLOAD REQUEST for file: ${filenameHeader}`);
       const filename = sanitizePath(filenameHeader);
-      console.log(`  ✓ SANITIZED FILENAME: ${filename}`);
+      console.log(`  [OK] SANITIZED FILENAME: ${filename}`);
       const filePath = path.join(uploadsDir, filename);
 
       const resolvedPath = path.resolve(filePath);
       const resolvedUploadsDir = path.resolve(uploadsDir);
       if (!resolvedPath.startsWith(resolvedUploadsDir)) {
-        console.log(`✗ BLOCKED: Path traversal attempt detected: ${filenameHeader}`);
+        console.log(`[X] BLOCKED: Path traversal attempt detected: ${filenameHeader}`);
         return res.status(403).json({ success: false, error: "Access denied" });
       }
 
@@ -457,19 +457,19 @@ module.exports = function registerRoutes(app, deps) {
       req.on("close", () => {
         if (!res.writableEnded) {
           downloadAborted = true;
-          console.log(`⚠ DOWNLOAD ABORTED by client: ${safeFilename}`);
+          console.log(`[!] DOWNLOAD ABORTED by client: ${safeFilename}`);
         }
       });
 
       req.on("error", (err) => {
         downloadAborted = true;
-        console.error(`⚠ DOWNLOAD ERROR (client): ${safeFilename}:`, err.message);
+        console.error(`[!] DOWNLOAD ERROR (client): ${safeFilename}:`, err.message);
       });
 
       const fileStream = fs.createReadStream(filePath);
 
       fileStream.on("error", (err) => {
-        console.error(`⚠ FILE STREAM ERROR: ${safeFilename}:`, err.message);
+        console.error(`[!] FILE STREAM ERROR: ${safeFilename}:`, err.message);
         if (!res.headersSent) {
           res.status(500).json({ success: false, error: "Error reading file" });
         }
@@ -483,7 +483,7 @@ module.exports = function registerRoutes(app, deps) {
 
       fileStream.on("end", () => {
         if (!downloadAborted) {
-          console.log(`✓ DOWNLOAD COMPLETED: ${safeFilename}`);
+          console.log(`[OK] DOWNLOAD COMPLETED: ${safeFilename}`);
         }
       });
     } catch (error) {
@@ -493,7 +493,7 @@ module.exports = function registerRoutes(app, deps) {
   });
 
   // ---------------------------------------------------------------------------
-  // Error handling middleware — must be registered last
+  // Error handling middleware -- must be registered last
   // ---------------------------------------------------------------------------
   app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

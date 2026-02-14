@@ -2,7 +2,7 @@
 
 A secure file upload server and diagnostic collection platform for IT support and system recovery scenarios.
 
-**The Problem:** Collecting diagnostic data from end-user machines is tedious. You either walk them through a dozen steps over the phone, remote in to do it yourself, or hope they can follow a written guide. When a machine won't boot, it gets worse—you need bootable media, recovery tools, and a way to get logs off the system.
+**The Problem:** Collecting diagnostic data from end-user machines is tedious. You either walk them through a dozen steps over the phone, remote in to do it yourself, or hope they can follow a written guide. When a machine won't boot, it gets worse -- you need bootable media, recovery tools, and a way to get logs off the system.
 
 **The Solution:** PhoneHomeWeb lets technicians run a single command (or boot a USB) that handles everything automatically. No manual steps, no room for error, no "which folder was that again?" The server injects credentials at download time, so the one-liner just works:
 
@@ -22,7 +22,7 @@ curl -fsSL https://your-server/linux-usb-installer -H "X-Auth-Key: ..." | sudo b
 ```
 
 That's it. Diagnostics collected, zipped, and uploaded.
-> ⚠️ **Security is your responsibility.** The auth key is a shared secret—anyone who has it can upload files to your server. Treat it accordingly:
+> **Security is your responsibility.** The auth key is a shared secret -- anyone who has it can upload files to your server. Treat it accordingly:
 > - **Roll your keys after every use** (or at least regularly). Generate a new key, update `.env`, restart the service.
 > - **Don't run the server 24/7** if you don't need to. Spin it up when collecting diagnostics, shut it down when you're done.
 > - **Always use TLS.** Self-signed certs are fine for testing, but use [Let's Encrypt](https://letsencrypt.org/) (it's free) for anything real.
@@ -37,11 +37,11 @@ That's it. Diagnostics collected, zipped, and uploaded.
 
 ## What's Included
 
-- **Server** (`server.js`) — Node.js/Express server that accepts authenticated file uploads and serves payload scripts with credentials baked in
-- **Windows Collector** — Comprehensive diagnostic collection from running Windows systems (event logs, registry, drivers, crash dumps, and more)
-- **WinPE USB Builder** — Create bootable Windows PE drives for offline diagnostics and BitLocker recovery
-- **Linux USB Builder** — Create bootable Debian Live drives with forensic and recovery tools (dislocker, testdisk, sleuthkit)
-- **File Upload Helper** — Generic authenticated upload for any file or script output
+- **Server** (`server.js`, `routes.js`, `logger.js`, `tls.js`) -- Node.js/Express server that accepts authenticated file uploads and serves payload scripts with credentials baked in
+- **Windows Collector** -- Comprehensive diagnostic collection from running Windows systems (event logs, registry, drivers, crash dumps, and more)
+- **WinPE USB Builder** -- Create bootable Windows PE drives for offline diagnostics and BitLocker recovery
+- **Linux USB Builder** -- Create bootable Debian Live drives with forensic and recovery tools (dislocker, testdisk, sleuthkit)
+- **File Upload Helper** -- Generic authenticated upload for any file or script output
 
 ---
 
@@ -78,7 +78,7 @@ This gives you full control and easy updates via `git pull`.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/PhoneHomeWeb.git
+git clone https://github.com/jeamajoal/PhoneHomeWeb.git
 cd PhoneHomeWeb
 
 # 2. Run the installer (Debian/Ubuntu with systemd)
@@ -87,19 +87,19 @@ sudo bash scripts/Install-PhoneHomeWeb.sh
 
 **What the installer does:**
 
-- ✅ Installs Node.js LTS if missing (via NodeSource)
-- ✅ Runs `npm install` to fetch dependencies
-- ✅ Creates `.env` from `.env.example` if missing
-- ✅ **Generates secure random AUTH_KEY and AUTH_KEY_HIGH_TRUST** if placeholders like `CHANGE_ME` are detected
-- ✅ Creates a dedicated `phonehomeweb` system user/group
-- ✅ Sets proper file permissions for uploads and logs
-- ✅ Installs and enables a systemd service
+- Installs Node.js LTS if missing (via NodeSource)
+- Runs `npm install` to fetch dependencies
+- Creates `.env` from `.env.example` if missing
+- **Generates secure random AUTH_KEY and AUTH_KEY_HIGH_TRUST** if placeholders like `CHANGE_ME` are detected
+- Creates a dedicated `phonehomeweb` system user/group
+- Sets proper file permissions for uploads and logs
+- Installs and enables a systemd service
 
 After installation, retrieve your generated keys:
 
 ```bash
 # View your auth keys (keep these secret!)
-sudo grep AUTH_KEY /opt/PhoneHomeWeb/.env
+sudo grep AUTH_KEY /opt/phonehomeweb/.env
 ```
 
 ### Option B: One-Liner Installer
@@ -107,16 +107,16 @@ sudo grep AUTH_KEY /opt/PhoneHomeWeb/.env
 For quick deployment on a fresh Debian/Ubuntu server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/PhoneHomeWeb/main/scripts/Install-PhoneHomeWeb.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/jeamajoal/PhoneHomeWeb/main/scripts/Install-PhoneHomeWeb.sh | sudo bash
 ```
 
-> ⚠️ **Note:** This downloads and executes a script. Review it first if you're security-conscious.
+> **Note:** This downloads and executes a script. Review it first if you're security-conscious.
 
 ### Manual Installation (Any OS)
 
 ```bash
 # Clone and enter directory
-git clone https://github.com/yourusername/PhoneHomeWeb.git
+git clone https://github.com/jeamajoal/PhoneHomeWeb.git
 cd PhoneHomeWeb
 
 # Install dependencies
@@ -157,7 +157,21 @@ cp .env.example .env
 | `AUTH_KEY_HIGH_TRUST` | *(optional)* | Key for sensitive operations |
 | `MAX_UPLOAD_MB` | `500` | Maximum upload size in MB |
 | `UPLOADS_DIR` | `uploads` | Where uploaded files are stored |
+| `PAYLOADS_DIR` | `payloads` | Where payload scripts are stored |
 | `DISABLE_SSL` | `true` | Set to `false` for HTTPS |
+| `CERTS_DIR` | `certs` | Directory containing TLS certificate files |
+| `TLS_KEY_FILE` | *(empty)* | Private key filename (PEM) |
+| `TLS_CERT_FILE` | *(empty)* | Certificate/fullchain filename (PEM) |
+| `TLS_CA_FILE` | *(empty)* | Optional CA/intermediate bundle filename |
+| `TLS_PFX_FILE` | *(empty)* | PFX/PKCS12 bundle filename (alternative to PEM) |
+| `TLS_PFX_PASSPHRASE` | *(empty)* | Passphrase for PFX bundle |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated, or `*` for all) |
+| `REQUEST_LOG_DIR` | `logs` | Directory for request log files |
+| `REQUEST_LOG_PATH` | `request_logs.jsonl` | Request log filename |
+| `BLOCKED_LOG_PATH` | `blocked.jsonl` | Blocked request log filename (daily rotated) |
+| `ENABLE_HEALTH_ENDPOINT` | `false` | Enable `/api/health` (auth required) |
+| `DCV_VALIDATION_PATH` | *(empty)* | Unauthenticated path for CA domain validation |
+| `DEBUG_AUTH` | `false` | Log hex key comparisons for auth troubleshooting |
 
 ### Authentication Keys
 
@@ -182,7 +196,7 @@ openssl rand -hex 32
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-> 🔒 The installer automatically generates cryptographically secure keys if you leave the placeholders.
+> The installer automatically generates cryptographically secure keys if you leave the placeholders.
 
 ---
 
@@ -237,7 +251,7 @@ Your provider sends **two files that matter**:
 | `yourdomain.bndl.crt` or `ca-bundle.crt` | Intermediate / root CA chain | `TLS_CA_FILE` |
 
 
-> ⚠️ **Generate your private key** You must generate a key + CSR pair and re-issue the certificate through your provider's account. Most CAs allow free re-issuance during the certificate's validity period:
+> **Generate your private key:** You must generate a key + CSR pair and re-issue the certificate through your provider's account. Most CAs allow free re-issuance during the certificate's validity period:
 > ```bash
 > # Generate a new private key and CSR
 > openssl req -new -newkey rsa:2048 -nodes \
@@ -247,7 +261,7 @@ Your provider sends **two files that matter**:
 > ```
 > Submit the new `.csr` file to your provider to re-issue.
 
-**Option A — Separate files (recommended):**
+**Option A -- Separate files (recommended):**
 
 ```bash
 # Copy your 3 files into the certs directory
@@ -270,7 +284,7 @@ TLS_CA_FILE=yourdomain.bndl.crt
 
 The server automatically appends the CA bundle to the certificate chain at startup.
 
-**Option B — Create a fullchain file yourself:**
+**Option B -- Create a fullchain file yourself:**
 
 ```bash
 # Concatenate server cert + CA bundle into one fullchain file
@@ -286,10 +300,10 @@ DISABLE_SSL=false
 SERVER_URL=https://yourdomain.com:3500
 TLS_KEY_FILE=yourdomain.key
 TLS_CERT_FILE=yourdomain.fullchain.crt
-# TLS_CA_FILE not needed — chain is already in TLS_CERT_FILE
+# TLS_CA_FILE not needed -- chain is already in TLS_CERT_FILE
 ```
 
-> 💡 **Verify after restart:** The server logs the certificate's Subject and SANs at startup. Confirm the Subject shows your domain, not `localhost` or a test name. If it shows the wrong CN, your `.env` may still point at a leftover self-signed certificate — update `TLS_KEY_FILE` and `TLS_CERT_FILE` to your CA-issued files.
+> **Verify after restart:** The server logs the certificate's Subject and SANs at startup. Confirm the Subject shows your domain, not `localhost` or a test name. If it shows the wrong CN, your `.env` may still point at a leftover self-signed certificate -- update `TLS_KEY_FILE` and `TLS_CERT_FILE` to your CA-issued files.
 
 ### Self-Signed Certificates (Development/Testing)
 
@@ -333,7 +347,7 @@ TLS_KEY_FILE=server-key.pem
 TLS_CERT_FILE=server-cert.pem
 ```
 
-> ⚠️ **Self-signed certificates require clients to trust the CA** or bypass verification. For production, use a real certificate authority.
+> **Self-signed certificates require clients to trust the CA** or bypass verification. For production, use a real certificate authority.
 
 ---
 
@@ -419,9 +433,9 @@ See [payloads/WinPECollector/README.md](payloads/WinPECollector/README.md) for f
 
 **Purpose:** Boot into Debian Live Linux for system recovery and forensic analysis.
 
-> ⚠️ **Build requirements:**
+> **Build requirements:**
 > - Must be built on a **Linux system** (WSL works, but requires USB passthrough via `usbipd-win` to attach and bind the USB device)
-> - Uses **Debian Live** ISO — select "Debian" when choosing the ISO
+> - Uses **Debian Live** ISO -- select "Debian" when choosing the ISO
 > - Only tested with the **Cinnamon** desktop variant
 
 **Use cases:**
@@ -523,7 +537,7 @@ These endpoints require the `X-Auth-Key` header with your standard auth key.
 | `/upload` | POST | Upload a file (multipart/form-data) |
 | `/payloads` | GET | List available payloads |
 | `/payloads/:folder/download/:file` | GET | Download a payload file (with credential injection) |
-| `/api/health` | GET | Health check (no auth required) |
+| `/api/health` | GET | Health check (disabled by default; set `ENABLE_HEALTH_ENDPOINT=true`) |
 
 ### High-Trust Endpoints (AUTH_KEY_HIGH_TRUST)
 
@@ -571,22 +585,31 @@ All installer endpoints require the `X-Auth-Key` header. The server replaces `<<
 
 PhoneHomeWeb implements defense-in-depth:
 
-1. **Authentication Required** - All requests must include `X-Auth-Key` header
-2. **Two-Tier Keys** - Sensitive operations require a separate high-trust key
-3. **Request Logging** - All requests logged to JSONL files (success and blocked)
-4. **Path Sanitization** - Upload filenames sanitized to prevent path traversal
-5. **No Directory Listing** - Uploads directory is not browsable
-6. **TLS Support** - Native HTTPS for encrypted transport
-7. **systemd Hardening** - Service runs as dedicated user with restricted privileges
-8. **Protected Configuration** - `.env` file is chmod 640, readable only by service user/group
+1. **Authentication Required** -- All requests must include `X-Auth-Key` header
+2. **Two-Tier Keys** -- Sensitive operations require a separate high-trust key
+3. **Timing-Safe Comparison** -- Auth keys are compared using `crypto.timingSafeEqual` to prevent timing attacks
+4. **Tarpit** -- Unauthenticated connections are held open (60-120s random delay) before being dropped, wasting scanner/bot resources
+5. **Security Headers** -- HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy; `X-Powered-By` removed
+6. **Request Logging** -- All requests logged to JSONL files with unique request IDs
+7. **Blocked Request Logging** -- Unauthorized requests logged to daily-rotated JSONL files (`blocked-YYYY-MM-DD.jsonl`)
+8. **Path Sanitization** -- Upload filenames sanitized to prevent path traversal
+9. **No Directory Listing** -- Uploads directory is not browsable
+10. **TLS Support** -- Native HTTPS with TLS 1.2+, strong ciphers, and perfect forward secrecy
+11. **systemd Hardening** -- Service runs as dedicated user with restricted privileges
+12. **Protected Configuration** -- `.env` file is chmod 640, readable only by service user/group
 
 **What gets logged:**
 
+Request log (`request_logs.jsonl`):
 ```jsonl
-{"timestamp":"2024-01-01T12:00:00.000Z","method":"POST","url":"/upload","ip":"192.168.1.100","filename":"diagnostics.zip","size":1048576}
+{"ts":"2026-01-01T12:00:00.000Z","type":"request_start","id":"a1b2c3d4e5f6","method":"POST","url":"/upload","ip":"192.168.1.100","ua":"curl/8.0"}
+{"ts":"2026-01-01T12:00:01.234Z","type":"request_finish","id":"a1b2c3d4e5f6","method":"POST","url":"/upload","status":200,"durationMs":1234.567}
 ```
 
-Blocked requests are logged separately with reason codes.
+Blocked log (`blocked-2026-01-01.jsonl`):
+```jsonl
+{"ts":"2026-01-01T12:00:00.000Z","type":"blocked","id":"f6e5d4c3b2a1","method":"GET","url":"/","ip":"1.2.3.4","ua":"Mozilla/5.0","reason":"missing_or_invalid_x_auth_key"}
+```
 
 ---
 
@@ -596,7 +619,7 @@ Blocked requests are logged separately with reason codes.
 
 You must set `AUTH_KEY` in `.env`:
 ```bash
-sudo nano /opt/PhoneHomeWeb/.env  # Add AUTH_KEY=your-key
+sudo nano /opt/phonehomeweb/.env  # Add AUTH_KEY=your-key
 sudo systemctl restart phonehomeweb
 ```
 
@@ -604,7 +627,7 @@ sudo systemctl restart phonehomeweb
 
 After installation, `.env` is protected (chmod 640). Use `sudo` to edit:
 ```bash
-sudo nano /opt/PhoneHomeWeb/.env
+sudo nano /opt/phonehomeweb/.env
 sudo systemctl restart phonehomeweb
 ```
 
@@ -612,7 +635,7 @@ sudo systemctl restart phonehomeweb
 
 Increase `MAX_UPLOAD_MB` in `.env` (default is 500 MB):
 ```bash
-sudo sed -i 's/MAX_UPLOAD_MB=.*/MAX_UPLOAD_MB=1000/' /opt/PhoneHomeWeb/.env
+sudo sed -i 's/MAX_UPLOAD_MB=.*/MAX_UPLOAD_MB=1000/' /opt/phonehomeweb/.env
 sudo systemctl restart phonehomeweb
 ```
 
@@ -645,11 +668,24 @@ Either:
 
 You're trying to access `/uploads` or `/download` with the standard key. Use `AUTH_KEY_HIGH_TRUST` instead.
 
+**Auth key not working -- server logs "BLOCKED" but key looks correct**
+
+Set `DEBUG_AUTH=true` in `.env` and restart. The server will log the hex representation of both the header value and the env key for every auth attempt. Compare the hex dumps to find the mismatch (trailing whitespace, encoding issues, extra quotes):
+```bash
+sudo sed -i 's/^DEBUG_AUTH=.*/DEBUG_AUTH=true/' /opt/phonehomeweb/.env
+sudo systemctl restart phonehomeweb
+# Send a test request, then check the journal:
+sudo journalctl -u phonehomeweb --no-pager -n 20
+# Remove when done:
+sudo sed -i 's/^DEBUG_AUTH=.*/DEBUG_AUTH=false/' /opt/phonehomeweb/.env
+sudo systemctl restart phonehomeweb
+```
+
 ---
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License
 
 ## Contributing
 

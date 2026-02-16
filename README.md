@@ -170,7 +170,7 @@ cp .env.example .env
 | `REQUEST_LOG_PATH` | `request_logs.jsonl` | Request log filename |
 | `BLOCKED_LOG_PATH` | `blocked.jsonl` | Blocked request log filename (daily rotated) |
 | `ENABLE_HEALTH_ENDPOINT` | `false` | Enable `/api/health` (auth required) |
-| `DCV_VALIDATION_PATH` | *(empty)* | Unauthenticated path for CA domain validation |
+| `DCV_VALIDATION_PATH` | *(empty)* | Unauthenticated folder path for CA domain validation |
 | `DEBUG_AUTH` | `false` | Log hex key comparisons for auth troubleshooting |
 
 ### Authentication Keys

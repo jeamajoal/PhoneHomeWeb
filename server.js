@@ -303,29 +303,35 @@ if (envBool("ENABLE_HEALTH_ENDPOINT", false)) {
 
 // Static key validation middleware - appears unresponsive without key
 app.use((req, res, next) => {
-  // Allow a single unauthenticated validation path (e.g., CA DCV file).
-  // DCV_VALIDATION_PATH must be an absolute URL path such as
-  //   /.well-known/pki-validation/ABC123.txt      (Sectigo HTTP DCV)
-  //   /.well-known/acme-challenge/<token>          (Let's Encrypt)
-  // The corresponding file must exist on disk at <project>/<dcvPath>.
+  // Allow unauthenticated validation path(s) for CA DCV files.
+  // DCV_VALIDATION_PATH must be an absolute URL path (folder) such as
+  //   /.well-known/pki-validation/                 (Sectigo HTTP DCV)
+  //   /.well-known/acme-challenge/                 (Let's Encrypt)
+  // Files matching that prefix will be served from <project>/<dcvPath>.
   const dcvPath = envStr(
     "DCV_VALIDATION_PATH",
     ""
   );
 
   // Skip key validation for DCV SSL certificate validation.
-  // Use an exact URL match (not endsWith) so crafted URLs can't abuse it.
-  if (dcvPath && req.url === dcvPath) {
+  // Check if the request URL starts with the DCV folder path.
+  if (dcvPath && req.url.startsWith(dcvPath)) {
     // Resolve the file relative to the project root; reject traversal.
-    const dcvDiskPath = path.resolve(__dirname, dcvPath.replace(/^\/+/, ""));
+    const dcvDiskPath = path.resolve(__dirname, req.url.replace(/^\/+/, ""));
     const projectRoot = path.resolve(__dirname);
     if (!dcvDiskPath.startsWith(projectRoot + path.sep)) {
-      console.log(`[X] DCV: Path traversal blocked for ${dcvPath}`);
+      console.log(`[X] DCV: Path traversal blocked for ${req.url}`);
       console.log("=".repeat(80) + "\n");
       return; // silent drop
     }
     if (!fs.existsSync(dcvDiskPath)) {
       console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      return; // silent drop
+    }
+    // Additional check: ensure it's a file, not a directory
+    if (!fs.statSync(dcvDiskPath).isFile()) {
+      console.log(`[X] DCV: Path is not a file: ${dcvDiskPath}`);
       console.log("=".repeat(80) + "\n");
       return; // silent drop
     }

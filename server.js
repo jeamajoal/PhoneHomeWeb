@@ -315,30 +315,42 @@ app.use((req, res, next) => {
 
   // Skip key validation for DCV SSL certificate validation.
   // Check if the request URL starts with the DCV folder path.
-  if (dcvPath && req.url.startsWith(dcvPath)) {
-    // Resolve the file relative to the project root; reject traversal.
-    const dcvDiskPath = path.resolve(__dirname, req.url.replace(/^\/+/, ""));
-    const projectRoot = path.resolve(__dirname);
-    if (!dcvDiskPath.startsWith(projectRoot + path.sep)) {
-      console.log(`[X] DCV: Path traversal blocked for ${req.url}`);
+  if (dcvPath) {
+    // Extract pathname only (strip query params to prevent bypass)
+    const requestPath = new URL(req.url, 'http://localhost').pathname;
+    
+    // Ensure dcvPath ends with / for proper prefix matching
+    const dcvFolder = dcvPath.endsWith('/') ? dcvPath : dcvPath + '/';
+    
+    if (requestPath.startsWith(dcvFolder)) {
+      // Resolve the file relative to the project root; reject traversal.
+      const dcvDiskPath = path.resolve(__dirname, requestPath.replace(/^\/+/, ""));
+      const projectRoot = path.resolve(__dirname);
+      const dcvDiskFolder = path.resolve(__dirname, dcvFolder.replace(/^\/+/, ""));
+      
+      // Check both project root and DCV folder boundaries
+      if (!dcvDiskPath.startsWith(projectRoot + path.sep) || 
+          !dcvDiskPath.startsWith(dcvDiskFolder)) {
+        console.log(`[X] DCV: Path traversal blocked for ${requestPath}`);
+        console.log("=".repeat(80) + "\n");
+        return; // silent drop
+      }
+      if (!fs.existsSync(dcvDiskPath)) {
+        console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
+        console.log("=".repeat(80) + "\n");
+        return; // silent drop
+      }
+      // Additional check: ensure it's a file, not a directory
+      if (!fs.statSync(dcvDiskPath).isFile()) {
+        console.log(`[X] DCV: Path is not a file: ${dcvDiskPath}`);
+        console.log("=".repeat(80) + "\n");
+        return; // silent drop
+      }
+      console.log(`[OK] DCV: Serving validation file ${dcvDiskPath}`);
       console.log("=".repeat(80) + "\n");
-      return; // silent drop
+      res.sendFile(dcvDiskPath);
+      return; // Don't call next() - response already sent
     }
-    if (!fs.existsSync(dcvDiskPath)) {
-      console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
-      console.log("=".repeat(80) + "\n");
-      return; // silent drop
-    }
-    // Additional check: ensure it's a file, not a directory
-    if (!fs.statSync(dcvDiskPath).isFile()) {
-      console.log(`[X] DCV: Path is not a file: ${dcvDiskPath}`);
-      console.log("=".repeat(80) + "\n");
-      return; // silent drop
-    }
-    console.log(`[OK] DCV: Serving validation file ${dcvDiskPath}`);
-    console.log("=".repeat(80) + "\n");
-    res.sendFile(dcvDiskPath);
-    return; // Don't call next() - response already sent
   }
 
   // Check for static key in query parameter or headers

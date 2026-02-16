@@ -115,9 +115,9 @@ module.exports = function registerRoutes(app, deps) {
       file: "install-linuxcollector.sh",
     },
     {
-      route: "/windowscollector-installer",
+      route: "/windowscollector",
       folder: "WindowsCollector",
-      file: "install-windowscollector.ps1",
+      file: "windows-collector.ps1",
     },
     {
       route: "/linux-upload-script",

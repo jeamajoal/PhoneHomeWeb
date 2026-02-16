@@ -52,10 +52,16 @@ irm https://your-server:3500/windowscollector-installer | iex
 ### 4. Direct Script Execution
 
 ```powershell
-.\Windows-Collector.ps1 -UploadUrl "https://server:3500/upload" -AuthKey "yourkey" -Silent
+.\Windows-Collector.ps1 -UploadUrl "https://server:3500/upload" -AuthKey "yourkey"
 ```
 
-### 5. Skip Upload (Local Collection Only)
+### 5. Interactive Console Mode
+
+```powershell
+.\Windows-Collector.ps1 -UploadUrl "https://server:3500/upload" -AuthKey "yourkey" -Interactive
+```
+
+### 6. Skip Upload (Local Collection Only)
 
 ```powershell
 .\Windows-Collector.ps1 -SkipUpload -OutputPath "C:\DiagLogs"
@@ -67,7 +73,8 @@ irm https://your-server:3500/windowscollector-installer | iex
 |-----------|-------------|---------|
 | `-UploadUrl` | Full upload URL | `<<SERVERURL>>/upload` |
 | `-AuthKey` | Authentication key | `<<AUTHKEY>>` |
-| `-Silent` | No interactive prompts | `$false` |
+| `-Interactive` | Enable interactive console output/prompts | `$false` |
+| `-Silent` | Force non-interactive/silent mode | Auto-set to `$true` unless `-Interactive` is set |
 | `-SkipUpload` | Don't upload, keep local | `$false` |
 | `-OutputPath` | Custom output directory | `%TEMP%\WindowsCollector` |
 | `-IncludeSecurityLogs` | Include Security event log | `$false` |

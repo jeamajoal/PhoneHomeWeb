@@ -32,6 +32,9 @@
 .PARAMETER Silent
     Run without interactive prompts (for EPM/RMM deployment)
 
+.PARAMETER Interactive
+    Enable interactive console output and exit prompts
+
 .PARAMETER SkipUpload
     Collect logs only, do not upload to server
 
@@ -51,6 +54,7 @@
 param(
     [string]$UploadUrl = "<<SERVERURL>>/upload",
     [string]$AuthKey = "<<AUTHKEY>>",
+    [switch]$Interactive,
     [switch]$Silent,
     [switch]$SkipUpload,
     [string]$OutputPath = "",
@@ -65,6 +69,11 @@ param(
 
 $ErrorActionPreference = "Continue"
 $ProgressPreference = "SilentlyContinue"
+
+# Default to non-interactive mode unless explicitly requested
+if (-not $Interactive) {
+    $Silent = $true
+}
 
 # TLS 1.2 for uploads
 try {

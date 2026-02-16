@@ -74,7 +74,7 @@ irm https://your-server:3500/windowscollector-installer | iex
 | `-UploadUrl` | Full upload URL | `<<SERVERURL>>/upload` |
 | `-AuthKey` | Authentication key | `<<AUTHKEY>>` |
 | `-Interactive` | Enable interactive console output/prompts | `$false` |
-| `-Silent` | Force non-interactive/silent mode | `$true` (default unless `-Interactive` is set) |
+| `-Silent` | Force non-interactive/silent mode | Auto-set to `$true` unless `-Interactive` is set |
 | `-SkipUpload` | Don't upload, keep local | `$false` |
 | `-OutputPath` | Custom output directory | `%TEMP%\WindowsCollector` |
 | `-IncludeSecurityLogs` | Include Security event log | `$false` |

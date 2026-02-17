@@ -56,6 +56,7 @@ That's it. Diagnostics collected, zipped, and uploaded.
 - [TLS/HTTPS Setup](#tlshttps-setup)
   - [Using Your Own Certificates](#using-your-own-certificates)
   - [Self-Signed Certificates (Development/Testing)](#self-signed-certificates-developmenttesting)
+  - [Domain Control Validation (DCV)](#domain-control-validation-dcv)
 - [Payloads](#payloads)
   - [Windows Collector](#windows-collector)
   - [WinPE Collector (Offline USB)](#winpe-collector-offline-usb)
@@ -170,7 +171,7 @@ cp .env.example .env
 | `REQUEST_LOG_PATH` | `request_logs.jsonl` | Request log filename |
 | `BLOCKED_LOG_PATH` | `blocked.jsonl` | Blocked request log filename (daily rotated) |
 | `ENABLE_HEALTH_ENDPOINT` | `false` | Enable `/api/health` (auth required) |
-| `DCV_VALIDATION_PATH` | *(empty)* | Unauthenticated path for CA domain validation |
+| `DCV_VALIDATION_PATH` | *(empty)* | Unauthenticated folder path for CA domain validation |
 | `DEBUG_AUTH` | `false` | Log hex key comparisons for auth troubleshooting |
 
 ### Authentication Keys
@@ -348,6 +349,68 @@ TLS_CERT_FILE=server-cert.pem
 ```
 
 > **Self-signed certificates require clients to trust the CA** or bypass verification. For production, use a real certificate authority.
+
+### Domain Control Validation (DCV)
+
+When obtaining or renewing SSL/TLS certificates from a Certificate Authority (CA), you must prove you control the domain. Many CAs use HTTP-based Domain Control Validation (DCV), where they place a validation file at a specific URL path and verify it's accessible.
+
+**The Problem:** PhoneHomeWeb requires authentication for all requests by default. CA validation requests don't include your auth key, so they fail.
+
+**The Solution:** The `DCV_VALIDATION_PATH` environment variable allows unauthenticated access to files in a specific folder for CA validation.
+
+**Configuration:**
+
+```dotenv
+# In .env - specify the folder path (with trailing slash)
+DCV_VALIDATION_PATH=/.well-known/pki-validation/
+```
+
+**How it works:**
+
+1. The CA tells you to place a validation file (e.g., `ABC123.txt`) at `https://yourdomain.com/.well-known/pki-validation/ABC123.txt`
+2. You create the folder in your PhoneHomeWeb directory: `mkdir -p .well-known/pki-validation/`
+3. You place the validation file(s) in that folder: `echo "validation-content" > .well-known/pki-validation/ABC123.txt`
+4. The CA can now access the file without authentication
+5. Any file in the configured DCV folder is served without authentication
+
+**Common validation paths:**
+
+| Certificate Authority | Typical Path |
+|---|---|
+| Sectigo, Comodo, DigiCert | `/.well-known/pki-validation/` |
+| Let's Encrypt (HTTP-01) | `/.well-known/acme-challenge/` |
+
+**Security notes:**
+
+- Only files within the exact folder specified are accessible
+- Path traversal attempts are blocked (you cannot escape the DCV folder)
+- Directory listing is disabled (files must be accessed by exact name)
+- The folder must exist on disk relative to the PhoneHomeWeb root directory
+- Query parameters are stripped to prevent bypass attempts
+- Empty/missing `DCV_VALIDATION_PATH` means no unauthenticated access (default secure behavior)
+
+**Example workflow (Sectigo/Comodo):**
+
+```bash
+# 1. Configure DCV path in .env
+echo "DCV_VALIDATION_PATH=/.well-known/pki-validation/" >> .env
+
+# 2. Create the validation folder
+mkdir -p .well-known/pki-validation/
+
+# 3. Place the validation file(s) provided by your CA
+echo "ABC123...validation-content-here" > .well-known/pki-validation/ABC123.txt
+
+# 4. Restart the server (if needed)
+sudo systemctl restart phonehomeweb
+
+# 5. CA validates via: https://yourdomain.com/.well-known/pki-validation/ABC123.txt
+# (No auth key required for this specific path)
+
+# 6. After validation completes, you can remove the files or leave them
+```
+
+> **Tip:** You can leave `DCV_VALIDATION_PATH` configured permanently. It only allows access to files you explicitly place in that folder.
 
 ---
 

@@ -209,9 +209,36 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 If you have certificates from a certificate authority (Let's Encrypt, DigiCert, etc.):
 
-1. Place your certificate files in the `certs/` directory (or specify absolute paths)
+1. Prefer creating **absolute symlinks** in `certs/` to your CA-managed files (best for automatic renewals). Copy files only if symlinks are not suitable in your environment.
+2. Use this full sequence (includes the required parent-directory permissions):
 
-2. Update `.env`:
+  ```bash
+  cd /opt/phonehomeweb
+
+  # Create/refresh app-side cert symlinks (absolute paths)
+  sudo ln -sfn /etc/letsencrypt/live/your-domain/privkey.pem certs/privkey.pem
+  sudo ln -sfn /etc/letsencrypt/live/your-domain/fullchain.pem certs/fullchain.pem
+
+  # phonehomeweb must be able to traverse these parent directories
+  sudo chgrp phonehomeweb /etc/letsencrypt /etc/letsencrypt/live /etc/letsencrypt/archive
+  sudo chmod 750 /etc/letsencrypt /etc/letsencrypt/live /etc/letsencrypt/archive
+
+  # Grant access to your domain-specific cert directories/files
+  sudo chgrp -R phonehomeweb /etc/letsencrypt/live/your-domain /etc/letsencrypt/archive/your-domain
+  sudo find /etc/letsencrypt/live/your-domain /etc/letsencrypt/archive/your-domain -type d -exec chmod 750 {} \;
+  sudo find /etc/letsencrypt/live/your-domain /etc/letsencrypt/archive/your-domain -type f -name "*.pem" -exec chmod 640 {} \;
+
+  # Verify as service user (blank output means still not readable)
+  sudo -u phonehomeweb test -r /etc/letsencrypt/live/your-domain/privkey.pem && echo "privkey readable"
+  sudo -u phonehomeweb test -r /etc/letsencrypt/live/your-domain/fullchain.pem && echo "fullchain readable"
+  sudo -u phonehomeweb test -r /opt/phonehomeweb/certs/privkey.pem && echo "app privkey readable"
+  sudo -u phonehomeweb test -r /opt/phonehomeweb/certs/fullchain.pem && echo "app fullchain readable"
+
+  # If still blank, identify the exact blocked path component
+  sudo -u phonehomeweb namei -l /etc/letsencrypt/live/your-domain/privkey.pem
+  ```
+
+3. Update `.env`:
 
 ```dotenv
 DISABLE_SSL=false
@@ -229,12 +256,14 @@ TLS_PFX_PASSPHRASE=your-passphrase
 **Let's Encrypt example:**
 
 ```bash
-# After running certbot, symlink or copy:
-sudo cp /etc/letsencrypt/live/your-domain/privkey.pem certs/
-sudo cp /etc/letsencrypt/live/your-domain/fullchain.pem certs/
+# After running certbot, prefer absolute symlinks (survive renewals)
+sudo ln -sfn /etc/letsencrypt/live/your-domain/privkey.pem certs/privkey.pem
+sudo ln -sfn /etc/letsencrypt/live/your-domain/fullchain.pem certs/fullchain.pem
 sudo chown phonehomeweb:phonehomeweb certs/*.pem
 sudo chmod 640 certs/*.pem
 ```
+
+> Use absolute symlink targets. Relative links created from the wrong directory can resolve incorrectly and trigger `SSL CERTIFICATES NOT FOUND` at startup.
 
 **Commercial CA (Sectigo, DigiCert, Comodo, etc.):**
 
@@ -265,10 +294,10 @@ Your provider sends **two files that matter**:
 **Option A -- Separate files (recommended):**
 
 ```bash
-# Copy your 3 files into the certs directory
-sudo cp yourdomain.key        /opt/phonehomeweb/certs/
-sudo cp yourdomain.crt        /opt/phonehomeweb/certs/
-sudo cp yourdomain.bndl.crt   /opt/phonehomeweb/certs/
+# Prefer symlinks if these files are rotated by your tooling; otherwise copy files into certs/
+sudo ln -sfn /path/to/yourdomain.key      /opt/phonehomeweb/certs/yourdomain.key
+sudo ln -sfn /path/to/yourdomain.crt      /opt/phonehomeweb/certs/yourdomain.crt
+sudo ln -sfn /path/to/yourdomain.bndl.crt /opt/phonehomeweb/certs/yourdomain.bndl.crt
 sudo chown phonehomeweb:phonehomeweb /opt/phonehomeweb/certs/*
 sudo chmod 640 /opt/phonehomeweb/certs/*
 ```
@@ -290,8 +319,9 @@ The server automatically appends the CA bundle to the certificate chain at start
 ```bash
 # Concatenate server cert + CA bundle into one fullchain file
 cat yourdomain.crt yourdomain.bndl.crt > yourdomain.fullchain.crt
-sudo cp yourdomain.key            /opt/phonehomeweb/certs/
-sudo cp yourdomain.fullchain.crt  /opt/phonehomeweb/certs/
+# Symlink preferred if your source path is stable; copy is fine for static files
+sudo ln -sfn /path/to/yourdomain.key            /opt/phonehomeweb/certs/yourdomain.key
+sudo ln -sfn /path/to/yourdomain.fullchain.crt  /opt/phonehomeweb/certs/yourdomain.fullchain.crt
 sudo chown phonehomeweb:phonehomeweb /opt/phonehomeweb/certs/*
 sudo chmod 640 /opt/phonehomeweb/certs/*
 ```

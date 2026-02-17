@@ -117,7 +117,7 @@ module.exports = function registerRoutes(app, deps) {
     {
       route: "/windowscollector",
       folder: "WindowsCollector",
-      file: "windows-collector.ps1",
+      file: "Windows-Collector.ps1",
     },
     {
       route: "/linux-upload-script",

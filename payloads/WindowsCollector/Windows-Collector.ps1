@@ -975,45 +975,82 @@ function Upload-CollectionZip {
     Write-Log "Target: $Url"
     
     try {
-        Add-Type -AssemblyName System.Net.Http
+        $fileName = [System.IO.Path]::GetFileName($ZipPath)
+        $boundary = [System.Guid]::NewGuid().ToString()
         
-        $httpClient = $null
-        $content = $null
-        $fileStream = $null
-        $fileContent = $null
+        $request = [System.Net.HttpWebRequest]::Create($Url)
+        $request.Method = "POST"
+        $request.ContentType = "multipart/form-data; boundary=$boundary"
+        $request.Headers.Add("X-Auth-Key", $Key)
+        $request.Timeout = 1800000          # 30 minutes
+        $request.ReadWriteTimeout = 1800000 # 30 minutes
+        $request.AllowWriteStreamBuffering = $false
         
+        # Build multipart boundaries
+        $headerBytes = [System.Text.Encoding]::UTF8.GetBytes(
+            "--$boundary`r`nContent-Disposition: form-data; name=`"file`"; filename=`"$fileName`"`r`nContent-Type: application/octet-stream`r`n`r`n"
+        )
+        $footerBytes = [System.Text.Encoding]::UTF8.GetBytes("`r`n--$boundary--`r`n")
+        $request.ContentLength = $headerBytes.Length + $fileSize + $footerBytes.Length
+        
+        Write-Log "Sending ($fileSizeMB MB, streaming)..."
+        Sync-Log
+        
+        $reqStream = $request.GetRequestStream()
         try {
-            $httpClient = [System.Net.Http.HttpClient]::new()
-            $httpClient.Timeout = [TimeSpan]::FromMinutes(30)
-            [void]$httpClient.DefaultRequestHeaders.Add("X-Auth-Key", $Key)
+            $reqStream.Write($headerBytes, 0, $headerBytes.Length)
             
-            $content = [System.Net.Http.MultipartFormDataContent]::new()
             $fileStream = [System.IO.File]::OpenRead($ZipPath)
-            $fileName = [System.IO.Path]::GetFileName($ZipPath)
-            $fileContent = [System.Net.Http.StreamContent]::new($fileStream)
-            $content.Add($fileContent, "file", $fileName)
+            try {
+                $buffer = New-Object byte[] 65536
+                while (($read = $fileStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $reqStream.Write($buffer, 0, $read)
+                }
+            } finally {
+                $fileStream.Close()
+            }
             
-            Write-Log "Sending..."
-            $response = $httpClient.PostAsync($Url, $content).Result
-            $responseContent = $response.Content.ReadAsStringAsync().Result
+            $reqStream.Write($footerBytes, 0, $footerBytes.Length)
+        } finally {
+            $reqStream.Close()
+        }
+        
+        $response = $request.GetResponse()
+        try {
+            $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+            $responseContent = $reader.ReadToEnd()
+            $reader.Close()
+            $statusCode = [int]$response.StatusCode
             
-            if ($response.IsSuccessStatusCode) {
+            if ($statusCode -ge 200 -and $statusCode -lt 300) {
                 Write-Log "Upload successful!" "SUCCESS"
                 Write-Log "Server response: $responseContent"
                 return $true
-            }
-            else {
-                Write-Log "Upload failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase)" "ERROR"
+            } else {
+                Write-Log "Upload failed: HTTP $statusCode" "ERROR"
                 Write-Log "Response: $responseContent" "ERROR"
                 return $false
             }
+        } finally {
+            $response.Close()
         }
-        finally {
-            if ($fileContent) { $fileContent.Dispose() }
-            if ($fileStream) { $fileStream.Dispose() }
-            if ($content) { $content.Dispose() }
-            if ($httpClient) { $httpClient.Dispose() }
+    }
+    catch [System.Net.WebException] {
+        $ex = $_.Exception
+        if ($ex.Response) {
+            try {
+                $errReader = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
+                $errBody = $errReader.ReadToEnd()
+                $errReader.Close()
+                Write-Log "Upload failed: HTTP $([int]$ex.Response.StatusCode) $($ex.Response.StatusDescription)" "ERROR"
+                Write-Log "Response: $errBody" "ERROR"
+            } catch {
+                Write-Log "Upload failed: $($ex.Message)" "ERROR"
+            }
+        } else {
+            Write-Log "Upload error: $($ex.Message)" "ERROR"
         }
+        return $false
     }
     catch {
         Write-Log "Upload error: $($_.Exception.Message)" "ERROR"

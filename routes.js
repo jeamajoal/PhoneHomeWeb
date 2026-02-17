@@ -9,6 +9,7 @@ const fs = require("fs");
  * @param {import('express').Express} app - Express application
  * @param {object} deps - Shared dependencies from server.js
  * @param {string} deps.SERVERURL - Configured server URL for placeholder injection
+ * @param {string} deps.STATIC_KEY - Standard AUTH_KEY used for installer placeholder injection
  * @param {string} deps.payloadsDir - Absolute path to payloads directory
  * @param {string} deps.uploadsDir - Absolute path to uploads directory
  * @param {import('multer').Multer} deps.upload - Configured multer instance
@@ -19,6 +20,7 @@ const fs = require("fs");
 module.exports = function registerRoutes(app, deps) {
   const {
     SERVERURL,
+    STATIC_KEY,
     payloadsDir,
     uploadsDir,
     upload,
@@ -74,7 +76,7 @@ module.exports = function registerRoutes(app, deps) {
         outputFilename = filename || "installer.ps1";
       }
 
-      const authKey = req.get("X-Auth-Key") || "";
+      const authKey = typeof STATIC_KEY === "string" ? STATIC_KEY : "";
       const serverUrl = typeof SERVERURL === "string" ? SERVERURL : "";
       const updatedContent = fileContent
         .replace(/<<SERVERURL>>/g, serverUrl)

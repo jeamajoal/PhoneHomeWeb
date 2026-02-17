@@ -414,6 +414,7 @@ app.use((req, res, next) => {
 const registerRoutes = require("./routes");
 registerRoutes(app, {
   SERVERURL,
+  STATIC_KEY,
   payloadsDir,
   uploadsDir,
   upload,

@@ -83,6 +83,7 @@ try {
 $Script:Divider = "================================================================================"
 $Script:CollectionStart = Get-Date
 $Script:LogMessages = @()
+$Script:LogFilePath = $null
 
 # ============================================================================
 # Logging Functions
@@ -109,6 +110,12 @@ function Write-Log {
         }
         Write-Host $logEntry -ForegroundColor $displayColor
     }
+
+    if ($Script:LogFilePath) {
+        try {
+            $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
+        } catch { }
+    }
 }
 
 function Write-Section {
@@ -125,6 +132,12 @@ function Write-Section {
     $Script:LogMessages += $Script:Divider
     $Script:LogMessages += " $Title"
     $Script:LogMessages += $Script:Divider
+
+    if ($Script:LogFilePath) {
+        try {
+            $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
+        } catch { }
+    }
 }
 
 function Write-Banner {
@@ -1070,7 +1083,8 @@ try {
     # Save collection log
     Write-Section "Finalizing"
     $logFile = Join-Path $collectDir "CollectionLog.txt"
-    $Script:LogMessages | Out-File -FilePath $logFile -Encoding UTF8 -Force
+    $Script:LogFilePath = $logFile
+    $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
     
     # Create collection summary
     $summaryFile = Join-Path $collectDir "CollectionSummary.txt"

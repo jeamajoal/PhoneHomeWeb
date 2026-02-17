@@ -8,7 +8,7 @@ A secure file upload server and diagnostic collection platform for IT support an
 
 **Windows Collector** (running system):
 ```powershell
-irm https://your-server/windowscollector-installer -H @{"X-Auth-Key"="..."} | iex
+irm https://your-server/windowscollector -H @{"X-Auth-Key"="..."} | iex
 ```
 
 **WinPE USB Builder** (offline/unbootable systems):
@@ -471,7 +471,7 @@ PhoneHomeWeb includes ready-to-use diagnostic collection tools for various scena
 
 ```powershell
 # Run as Administrator
-Invoke-RestMethod -Uri "https://your-server:3500/windowscollector-installer" `
+Invoke-RestMethod -Uri "https://your-server:3500/windowscollector" `
   -Headers @{"X-Auth-Key"="your-auth-key"} | Invoke-Expression
 ```
 
@@ -663,7 +663,7 @@ These endpoints serve installer scripts with credentials automatically injected.
 
 | Endpoint | Description |
 |----------|-------------|
-| `/windowscollector-installer` | Windows Collector one-liner installer |
+| `/windowscollector` | Windows Collector script (credentials injected) |
 | `/winpe-usb-installer` | WinPE USB builder installer |
 | `/winpecollector-installer` | WinPE Collector installer |
 | `/linux-usb-installer` | Linux USB builder installer |
@@ -736,7 +736,7 @@ sudo systemctl restart phonehomeweb
 
 The script wasn't downloaded through the credential-injecting endpoint. Use:
 ```powershell
-Invoke-RestMethod -Uri "https://server/windowscollector-installer" -Headers @{"X-Auth-Key"="..."} | iex
+Invoke-RestMethod -Uri "https://server/windowscollector" -Headers @{"X-Auth-Key"="..."} | iex
 ```
 
 **Clients see CN=localhost or wrong certificate after switching to CA-issued certs**

@@ -812,12 +812,6 @@ $(Get-MpPreference | Format-List | Out-String)
         Get-LocalGroupMember -Group "Administrators" -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $secDir "LocalGroups.txt")
     
-    # Group Policy
-    Write-Log "Collecting Group Policy results..."
-    Invoke-SafeCommand -Description "GPResult" -Command {
-        gpresult /z 2>&1 | Out-String
-    } -OutputFile (Join-Path $secDir "GPResult.txt")
-    
     # Audit policy
     Invoke-SafeCommand -Description "AuditPolicy" -Command {
         auditpol /get /category:* 2>&1 | Out-String

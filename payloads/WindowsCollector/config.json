@@ -1,12 +1,11 @@
 {
   "name": "WindowsCollector",
-  "endpoint": "windowscollector-installer",
+  "endpoint": "windowscollector",
   "version": "1.0.0",
   "description": "Online Windows diagnostic log collector for running systems. Collects comprehensive system diagnostics, event logs, registry hives, and system health data, then uploads to PhoneHomeWeb server.",
   "serverUrl": "<<SERVERURL>>",
   "downloadFolder": "WindowsCollector",
   "mainScript": "Windows-Collector.ps1",
-  "installerScript": "install-windowscollector.ps1",
   "parameters": [
     {
       "name": "UploadUrl",
@@ -45,7 +44,6 @@
     "Running processes and services",
     "Scheduled tasks",
     "Disk and storage health (SMART, BitLocker status)",
-    "Group Policy results (gpresult)",
     "Windows Defender status and logs",
     "Driver information",
     "System information (systeminfo, msinfo32)",
@@ -61,7 +59,7 @@
     "EPM/RMM push (runs as SYSTEM)",
     "Interactive execution",
     "Scheduled task",
-    "One-liner installer via web"
+    "One-liner via web endpoint"
   ],
   "author": "jeamajoal",
   "license": "MIT"

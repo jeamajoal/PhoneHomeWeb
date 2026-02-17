@@ -22,7 +22,7 @@ Online Windows diagnostic log collector for running systems. Designed to be depl
 | Network | ipconfig, route, netstat, firewall, DNS, hosts |
 | Processes | Running processes, services, startup items |
 | Storage | Disks, partitions, volumes, SMART health, BitLocker status |
-| Security | Defender status, local users/groups, GPResult, audit policy, TPM |
+| Security | Defender status, local users/groups, audit policy, TPM |
 | Drivers | Installed drivers, problematic devices |
 | Tasks | All scheduled tasks with exports |
 
@@ -31,37 +31,24 @@ Online Windows diagnostic log collector for running systems. Designed to be depl
 ### 1. One-Liner (PowerShell as Admin)
 
 ```powershell
-irm https://your-server:3500/windowscollector-installer | iex
+irm https://your-server:3500/windowscollector -H @{"X-Auth-Key"="your-auth-key"} | iex
 ```
 
-### 2. Silent Mode (EPM/RMM)
+The script defaults to silent (non-interactive) mode — no env vars needed for RMM/EPM.
 
-```powershell
-$env:SILENT = "1"; irm https://your-server:3500/windowscollector-installer | iex
-```
-
-### 3. With Parameters via Environment
-
-```powershell
-$env:SILENT = "1"
-$env:INCLUDE_SECURITY_LOGS = "1"
-$env:OUTPUT_PATH = "C:\Logs\Collector"
-irm https://your-server:3500/windowscollector-installer | iex
-```
-
-### 4. Direct Script Execution
+### 2. Direct Script Execution
 
 ```powershell
 .\Windows-Collector.ps1 -UploadUrl "https://server:3500/upload" -AuthKey "yourkey"
 ```
 
-### 5. Interactive Console Mode
+### 3. Interactive Console Mode
 
 ```powershell
 .\Windows-Collector.ps1 -UploadUrl "https://server:3500/upload" -AuthKey "yourkey" -Interactive
 ```
 
-### 6. Skip Upload (Local Collection Only)
+### 4. Skip Upload (Local Collection Only)
 
 ```powershell
 .\Windows-Collector.ps1 -SkipUpload -OutputPath "C:\DiagLogs"
@@ -123,7 +110,6 @@ Example: `DESKTOP-ABC123_5CG1234XYZ_20260202-143052_WindowsLogs.zip`
 | Live Data | Processes, services, network | N/A (offline) |
 | Event Logs | Export via wevtutil | Copy .evtx files |
 | Registry | Export + raw copy | Raw hive copy only |
-| GPResult | Yes | N/A |
 | Defender Status | Yes | N/A |
 
 ## Troubleshooting

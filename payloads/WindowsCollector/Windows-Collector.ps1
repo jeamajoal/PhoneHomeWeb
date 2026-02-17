@@ -1051,7 +1051,7 @@ try {
     
     # Setup working directory
     if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-        $workDir = Join-Path $env:TEMP "WindowsCollector-$($identity.Timestamp)"
+        $workDir = Join-Path "$env:SystemDrive\Windows\Temp" "WindowsCollector-$($identity.Timestamp)"
     }
     else {
         $workDir = $OutputPath

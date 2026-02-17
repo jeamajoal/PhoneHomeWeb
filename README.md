@@ -72,7 +72,38 @@ That's it. Diagnostics collected, zipped, and uploaded.
 
 ## Quick Start
 
-### Option A: Clone and Install (Recommended)
+### Option A: Docker Deployment (Recommended for Containers)
+
+The easiest way to deploy PhoneHomeWeb in a containerized environment.
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/jeamajoal/PhoneHomeWeb.git
+cd PhoneHomeWeb
+
+# 2. Create and configure .env file
+cp .env.example .env
+nano .env  # Set AUTH_KEY and AUTH_KEY_HIGH_TRUST
+
+# 3. Start with Docker Compose
+docker compose up -d
+
+# 4. View logs
+docker compose logs -f
+```
+
+**What the Docker setup provides:**
+
+- Isolated container environment with Node.js 20
+- Persistent data volumes for uploads, logs, and user content
+- Automatic restart on failure
+- Easy updates via `git pull && docker compose up -d --build`
+- Support for custom routes and user scripts
+- Read-only mounts for configuration security
+
+See [DOCKER.md](DOCKER.md) for comprehensive Docker deployment guide.
+
+### Option B: Clone and Install (Recommended for VMs/Bare Metal)
 
 This gives you full control and easy updates via `git pull`.
 
@@ -102,7 +133,7 @@ After installation, retrieve your generated keys:
 sudo grep AUTH_KEY /opt/phonehomeweb/.env
 ```
 
-### Option B: One-Liner Installer
+### Option C: One-Liner Installer
 
 For quick deployment on a fresh Debian/Ubuntu server:
 
@@ -112,7 +143,7 @@ curl -fsSL https://raw.githubusercontent.com/jeamajoal/PhoneHomeWeb/main/scripts
 
 > **Note:** This downloads and executes a script. Review it first if you're security-conscious.
 
-### Manual Installation (Any OS)
+### Option D: Manual Installation (Any OS)
 
 ```bash
 # Clone and enter directory
@@ -528,6 +559,20 @@ curl -X POST "https://your-server:3500/upload" \
 
 ## API Endpoints
 
+### Public Endpoints (NO AUTHENTICATION)
+
+These endpoints are publicly accessible without any authentication key:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/user-scripts/:filename` | GET | Serve public scripts from `data/user-scripts/` directory (e.g., phone-home scripts) |
+
+**Example:**
+```bash
+# Download and execute a public phone-home script
+curl http://your-server:3500/user-scripts/phone-home.sh | bash
+```
+
 ### Standard Endpoints (AUTH_KEY)
 
 These endpoints require the `X-Auth-Key` header with your standard auth key.
@@ -537,6 +582,7 @@ These endpoints require the `X-Auth-Key` header with your standard auth key.
 | `/upload` | POST | Upload a file (multipart/form-data) |
 | `/payloads` | GET | List available payloads |
 | `/payloads/:folder/download/:file` | GET | Download a payload file (with credential injection) |
+| `/user-installers/:filename` | GET | Download protected installer from `data/user-installers/` directory |
 | `/api/health` | GET | Health check (disabled by default; set `ENABLE_HEALTH_ENDPOINT=true`) |
 
 ### High-Trust Endpoints (AUTH_KEY_HIGH_TRUST)
@@ -578,6 +624,95 @@ These endpoints serve installer scripts with credentials automatically injected.
 | `/fileupload` | Generic file upload script |
 
 All installer endpoints require the `X-Auth-Key` header. The server replaces `<<SERVERURL>>` and `<<AUTHKEY>>` placeholders in the scripts with actual values.
+
+---
+
+## Extensibility & Customization
+
+PhoneHomeWeb supports custom route definitions and user-provided scripts through the data volume structure.
+
+### Custom Routes
+
+Add custom API endpoints without modifying core code by creating routes in `data/user-routes/index.js`:
+
+```javascript
+module.exports = function registerUserRoutes(app, deps) {
+  // Add custom authenticated endpoint
+  app.get("/custom/status", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      custom: true,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Access server dependencies
+  const { uploadsDir, sanitizePath, sanitizeFilename } = deps;
+  
+  // Custom file upload handler
+  app.post("/custom/upload", deps.upload.single("file"), (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file" });
+    }
+    res.json({ 
+      success: true,
+      filename: req.file.filename
+    });
+  });
+};
+```
+
+All custom routes automatically inherit the authentication middleware and security headers.
+
+### Public User Scripts
+
+Place scripts in `data/user-scripts/` for **public access without authentication**:
+
+```bash
+# Create a phone-home script
+cat > data/user-scripts/phone-home.sh << 'EOF'
+#!/bin/bash
+# Collect system diagnostics and upload
+tar -czf /tmp/diag.tar.gz /var/log
+curl -X POST http://your-server:3500/upload \
+  -H "X-Auth-Key: YOUR_KEY" \
+  -F "file=@/tmp/diag.tar.gz"
+EOF
+
+# Users can execute without auth:
+curl http://your-server:3500/user-scripts/phone-home.sh | bash
+```
+
+⚠️ **Security Warning:** Files in `user-scripts/` are publicly accessible. Only place trusted, non-sensitive scripts here.
+
+### Protected User Installers
+
+Place installers in `data/user-installers/` for **authenticated-only access**:
+
+```bash
+# Add protected installer
+cp my-app-installer.exe data/user-installers/
+
+# Download requires authentication
+curl -H "X-Auth-Key: YOUR_KEY" \
+  http://your-server:3500/user-installers/my-app-installer.exe \
+  -o installer.exe
+```
+
+### Directory Structure
+
+```
+data/
+├── user-routes/        # Custom route definitions (loaded at startup)
+│   └── index.js        # Main routes file
+├── user-scripts/       # Public scripts (NO AUTH required)
+│   └── *.sh, *.ps1     # Your phone-home scripts
+├── user-installers/    # Protected installers (AUTH required)
+│   └── *.exe, *.msi    # Your installer packages
+└── search/             # Search data (future expansion)
+```
+
+See [data/README.md](data/README.md) for detailed documentation and examples.
 
 ---
 

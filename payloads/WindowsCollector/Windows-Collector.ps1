@@ -975,6 +975,13 @@ function Upload-CollectionZip {
     Write-Log "Target: $Url"
     
     try {
+        # Ensure TLS 1.2+ for HttpWebRequest (must be set before request creation)
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+        } catch {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        }
+        
         $fileName = [System.IO.Path]::GetFileName($ZipPath)
         $boundary = [System.Guid]::NewGuid().ToString()
         

@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  phonehomeweb:
+    build: .
+    container_name: phonehomeweb
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3500}:3500"
+    environment:
+      - PORT=3500
+      - BIND_HOST=0.0.0.0
+      - SERVER_URL=${SERVER_URL:-http://localhost:3500}
+      - AUTH_KEY=${AUTH_KEY}
+      - AUTH_KEY_HIGH_TRUST=${AUTH_KEY_HIGH_TRUST}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-500}
+      - UPLOADS_DIR=/data/uploads
+      - PAYLOADS_DIR=/app/payloads
+      - REQUEST_LOG_DIR=/data/logs
+      - REQUEST_LOG_PATH=request_logs.jsonl
+      - BLOCKED_LOG_PATH=blocked.jsonl
+      - DISABLE_SSL=${DISABLE_SSL:-true}
+      - CERTS_DIR=/app/certs
+      - TLS_PFX_FILE=${TLS_PFX_FILE:-}
+      - TLS_PFX_PASSPHRASE=${TLS_PFX_PASSPHRASE:-}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-}
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-}
+      - TLS_CA_FILE=${TLS_CA_FILE:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - ENABLE_HEALTH_ENDPOINT=${ENABLE_HEALTH_ENDPOINT:-false}
+      - DCV_VALIDATION_PATH=${DCV_VALIDATION_PATH:-}
+      - USER_ROUTES_DIR=/data/user-routes
+      - USER_SCRIPTS_DIR=/data/user-scripts
+      - USER_INSTALLERS_DIR=/data/user-installers
+      - SEARCH_DIR=/data/search
+    volumes:
+      # Data volume for persistent storage
+      - phonehomeweb-data:/data
+      # Mount certs directory for TLS certificates
+      - ./certs:/app/certs:ro
+      # Mount user-routes for dynamic route expansion
+      - ./data/user-routes:/data/user-routes:ro
+      # Mount user scripts (public access)
+      - ./data/user-scripts:/data/user-scripts:ro
+      # Mount user installers (auth required)
+      - ./data/user-installers:/data/user-installers:ro
+      # Mount search folder
+      - ./data/search:/data/search
+    networks:
+      - phonehomeweb-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3500', (r) => process.exit(r.statusCode === 404 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  phonehomeweb-network:
+    driver: bridge
+
+volumes:
+  phonehomeweb-data:
+    driver: local

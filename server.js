@@ -335,6 +335,13 @@ app.use((req, res, next) => {
     return; // Don't call next() - response already sent
   }
 
+  // Skip authentication for user-scripts endpoint (public access)
+  if (req.url.startsWith("/user-scripts/")) {
+    console.log(`[INFO] Public user-scripts access (no auth required): ${req.url}`);
+    console.log("=".repeat(80) + "\n");
+    return next();
+  }
+
   // Check for static key in query parameter or headers
   const keyFromHeader = req.get("X-Auth-Key");
   

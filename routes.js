@@ -40,6 +40,22 @@ module.exports = function registerRoutes(app, deps) {
   });
 
   // ---------------------------------------------------------------------------
+  // Helper: Get environment-configured directory paths
+  // ---------------------------------------------------------------------------
+  const userScriptsDir = path.resolve(
+    process.env.USER_SCRIPTS_DIR || path.join(__dirname, "data", "user-scripts")
+  );
+  const userInstallersDir = path.resolve(
+    process.env.USER_INSTALLERS_DIR || path.join(__dirname, "data", "user-installers")
+  );
+  const userRoutesDir = path.resolve(
+    process.env.USER_ROUTES_DIR || path.join(__dirname, "data", "user-routes")
+  );
+  const searchDir = path.resolve(
+    process.env.SEARCH_DIR || path.join(__dirname, "data", "search")
+  );
+
+  // ---------------------------------------------------------------------------
   // Helper: replace <<PARAM>> placeholders in file content or on-disk file
   // ---------------------------------------------------------------------------
   function getFileWithParamOverwrite(paramName, value, filePathOrContent) {
@@ -491,6 +507,100 @@ module.exports = function registerRoutes(app, deps) {
       res.status(400).json({ success: false, error: "Invalid filename parameter" });
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // User Scripts endpoint (PUBLIC - NO AUTHENTICATION REQUIRED)
+  // ---------------------------------------------------------------------------
+  app.get("/user-scripts/:filename", (req, res) => {
+    try {
+      const filename = sanitizePath(req.params.filename);
+      const filePath = path.join(userScriptsDir, filename);
+
+      // Security: Ensure path stays within user-scripts directory
+      const resolvedPath = path.resolve(filePath);
+      const resolvedBaseDir = path.resolve(userScriptsDir);
+      if (!resolvedPath.startsWith(resolvedBaseDir)) {
+        console.log(`[X] BLOCKED: Path traversal attempt in user-scripts: ${req.params.filename}`);
+        return res.status(403).json({ success: false, error: "Access denied" });
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, error: "Script not found" });
+      }
+
+      const stats = fs.statSync(filePath);
+      if (!stats.isFile()) {
+        return res.status(400).json({ success: false, error: "Invalid file" });
+      }
+
+      console.log(`[OK] PUBLIC SCRIPT ACCESS: ${filename}`);
+      console.log("=".repeat(80) + "\n");
+
+      const safeFilename = sanitizeFilename(path.basename(filename));
+      res.setHeader("Content-Disposition", `inline; filename="${safeFilename}"`);
+      res.sendFile(resolvedPath);
+    } catch (error) {
+      console.error("Error serving user script:", error.message);
+      res.status(400).json({ success: false, error: "Invalid request" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // User Installers endpoint (PROTECTED - REQUIRES AUTHENTICATION)
+  // ---------------------------------------------------------------------------
+  app.get("/user-installers/:filename", (req, res) => {
+    try {
+      const filename = sanitizePath(req.params.filename);
+      const filePath = path.join(userInstallersDir, filename);
+
+      // Security: Ensure path stays within user-installers directory
+      const resolvedPath = path.resolve(filePath);
+      const resolvedBaseDir = path.resolve(userInstallersDir);
+      if (!resolvedPath.startsWith(resolvedBaseDir)) {
+        console.log(`[X] BLOCKED: Path traversal attempt in user-installers: ${req.params.filename}`);
+        return res.status(403).json({ success: false, error: "Access denied" });
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, error: "Installer not found" });
+      }
+
+      const stats = fs.statSync(filePath);
+      if (!stats.isFile()) {
+        return res.status(400).json({ success: false, error: "Invalid file" });
+      }
+
+      console.log(`[OK] USER INSTALLER ACCESS: ${filename}`);
+      console.log("=".repeat(80) + "\n");
+
+      const safeFilename = sanitizeFilename(path.basename(filename));
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+      res.sendFile(resolvedPath);
+    } catch (error) {
+      console.error("Error serving user installer:", error.message);
+      res.status(400).json({ success: false, error: "Invalid request" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Load user-defined routes (if available)
+  // ---------------------------------------------------------------------------
+  try {
+    const userRoutesFile = path.join(userRoutesDir, "index.js");
+    if (fs.existsSync(userRoutesFile)) {
+      console.log(`[INFO] Loading user routes from: ${userRoutesFile}`);
+      const registerUserRoutes = require(userRoutesFile);
+      registerUserRoutes(app, deps);
+      console.log(`[OK] User routes loaded successfully`);
+      console.log("=".repeat(80) + "\n");
+    } else {
+      console.log(`[INFO] No user routes found at: ${userRoutesFile}`);
+      console.log("=".repeat(80) + "\n");
+    }
+  } catch (error) {
+    console.error(`[ERROR] Failed to load user routes:`, error.message);
+    console.log("=".repeat(80) + "\n");
+  }
 
   // ---------------------------------------------------------------------------
   // Error handling middleware -- must be registered last

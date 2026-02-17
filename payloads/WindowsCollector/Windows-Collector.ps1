@@ -110,7 +110,9 @@ function Write-Log {
         }
         Write-Host $logEntry -ForegroundColor $displayColor
     }
+}
 
+function Sync-Log {
     if ($Script:LogFilePath) {
         try {
             $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
@@ -132,12 +134,7 @@ function Write-Section {
     $Script:LogMessages += $Script:Divider
     $Script:LogMessages += " $Title"
     $Script:LogMessages += $Script:Divider
-
-    if ($Script:LogFilePath) {
-        try {
-            $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
-        } catch { }
-    }
+    Sync-Log
 }
 
 function Write-Banner {
@@ -1072,6 +1069,10 @@ try {
     
     New-Item -ItemType Directory -Path $workDir -Force | Out-Null
     
+    # Start persisting log to workDir immediately (survives cleanup)
+    $Script:LogFilePath = Join-Path $workDir "CollectionLog.txt"
+    Sync-Log
+    
     Write-Log "Computer: $($identity.ComputerName)"
     Write-Log "Serial: $($identity.SerialNumber)"
     Write-Log "Working directory: $workDir"
@@ -1080,11 +1081,11 @@ try {
     # Run collection
     $collectDir = Invoke-Collection -WorkDir $workDir
     
-    # Save collection log
+    # Flush current log and copy snapshot into collection folder for the ZIP
     Write-Section "Finalizing"
-    $logFile = Join-Path $collectDir "CollectionLog.txt"
-    $Script:LogFilePath = $logFile
-    $Script:LogMessages | Out-File -FilePath $Script:LogFilePath -Encoding UTF8 -Force
+    Sync-Log
+    $logSnapshot = Join-Path $collectDir "CollectionLog.txt"
+    Copy-Item -Path $Script:LogFilePath -Destination $logSnapshot -Force -ErrorAction SilentlyContinue
     
     # Create collection summary
     $summaryFile = Join-Path $collectDir "CollectionSummary.txt"
@@ -1119,6 +1120,7 @@ $Script:Divider
     
     $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
     Write-Log "Created: $zipPath ($zipSize MB)" "SUCCESS"
+    Sync-Log
     
     # Upload if not skipped
     if (-not $SkipUpload) {
@@ -1152,6 +1154,8 @@ $Script:Divider
     Write-Section "Complete"
     Write-Log "Collection complete!" "SUCCESS"
     Write-Log "Output: $zipPath"
+    Write-Log "Full log: $($Script:LogFilePath)"
+    Sync-Log
     
     if (-not $Silent) {
         Write-Host ""
@@ -1164,6 +1168,7 @@ $Script:Divider
 catch {
     Write-Log "Fatal error: $($_.Exception.Message)" "ERROR"
     Write-Log $_.ScriptStackTrace "ERROR"
+    Sync-Log
     
     if (-not $Silent) {
         Write-Host ""

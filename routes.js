@@ -536,6 +536,8 @@ module.exports = function registerRoutes(app, deps) {
       console.log(`[OK] PUBLIC SCRIPT ACCESS: ${filename}`);
       console.log("=".repeat(80) + "\n");
 
+      // Use basename as an additional safety measure even though
+      // filename should already be sanitized
       const safeFilename = sanitizeFilename(path.basename(filename));
       res.setHeader("Content-Disposition", `inline; filename="${safeFilename}"`);
       res.sendFile(resolvedPath);
@@ -573,6 +575,8 @@ module.exports = function registerRoutes(app, deps) {
       console.log(`[OK] USER INSTALLER ACCESS: ${filename}`);
       console.log("=".repeat(80) + "\n");
 
+      // Use basename as an additional safety measure even though
+      // filename should already be sanitized
       const safeFilename = sanitizeFilename(path.basename(filename));
       res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
       res.sendFile(resolvedPath);
@@ -589,7 +593,16 @@ module.exports = function registerRoutes(app, deps) {
     const userRoutesFile = path.join(userRoutesDir, "index.js");
     if (fs.existsSync(userRoutesFile)) {
       console.log(`[INFO] Loading user routes from: ${userRoutesFile}`);
+      
+      // Load the user routes module
       const registerUserRoutes = require(userRoutesFile);
+      
+      // Validate that it exports a function
+      if (typeof registerUserRoutes !== 'function') {
+        throw new Error('User routes module must export a function');
+      }
+      
+      // Register the routes with error handling
       registerUserRoutes(app, deps);
       console.log(`[OK] User routes loaded successfully`);
       console.log("=".repeat(80) + "\n");
@@ -599,7 +612,9 @@ module.exports = function registerRoutes(app, deps) {
     }
   } catch (error) {
     console.error(`[ERROR] Failed to load user routes:`, error.message);
+    console.error(`[ERROR] User-defined routes will not be available`);
     console.log("=".repeat(80) + "\n");
+    // Don't crash the server - just skip user routes
   }
 
   // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ Contains custom route definitions that are dynamically loaded by the server.
 - **Purpose**: Extend the server with custom endpoints without modifying core code
 - **Security**: Routes defined here are protected by the same authentication middleware as core routes
 - **File**: `index.js` - Main entry point for user routes (see example template)
+- **⚠️ Security Warning**: The user-routes file is executed as Node.js code. Only add trusted code to this file. In Docker deployments, this directory is mounted as read-only to prevent runtime modification. Always review user-routes code before deployment.
 
 ### `/data/user-scripts/`
 Public scripts directory accessible without authentication.

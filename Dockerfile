@@ -4,7 +4,10 @@ FROM node:20-alpine
 # Create app directory
 WORKDIR /app
 
-# Copy package files and dependencies
+# Copy package files and pre-built dependencies
+# Note: We copy node_modules from the host because npm ci/install fails
+# in some Alpine environments. This is acceptable for this use case since
+# the app has no native dependencies that are platform-specific.
 COPY package*.json ./
 COPY node_modules ./node_modules
 

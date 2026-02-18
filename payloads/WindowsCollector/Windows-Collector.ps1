@@ -1135,11 +1135,49 @@ $(Get-PhysicalDisk | Select-Object FriendlyName, HealthStatus, OperationalStatus
                 try {
                     $efiRoot = "$efiLetter`:\"
                     if (Test-Path -LiteralPath $efiRoot) {
-                        Get-ChildItem -LiteralPath $efiRoot -Recurse -Force -ErrorAction SilentlyContinue |
+                        $efiFiles = Get-ChildItem -LiteralPath $efiRoot -Recurse -Force -ErrorAction SilentlyContinue |
                             Where-Object { -not $_.PSIsContainer } |
-                            Select-Object FullName, CreationTimeUtc, LastWriteTimeUtc, Length |
+                            Select-Object FullName, CreationTimeUtc, LastWriteTimeUtc, Length
+
+                        $efiFiles |
                             Export-Csv -Path $efiCsvPath -NoTypeInformation -Encoding UTF8 -Force
                         Write-Log "EFI file inventory exported: $efiCsvPath" "SUCCESS"
+
+                        $efiLogFiles = $efiFiles | Where-Object {
+                            $_.FullName -and $_.FullName.ToLowerInvariant().EndsWith('.log')
+                        }
+
+                        if ($efiLogFiles -and $efiLogFiles.Count -gt 0) {
+                            $efiLogsDir = Join-Path $diskDir "EfiLogs"
+                            New-Item -ItemType Directory -Path $efiLogsDir -Force | Out-Null
+                            $copiedLogCount = 0
+
+                            foreach ($logFile in $efiLogFiles) {
+                                try {
+                                    $relativePath = $logFile.FullName.Substring($efiRoot.Length).TrimStart('\\')
+                                    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+                                        $relativePath = [System.IO.Path]::GetFileName($logFile.FullName)
+                                    }
+
+                                    $destinationFile = Join-Path $efiLogsDir $relativePath
+                                    $destinationParent = Split-Path -Parent $destinationFile
+                                    if ($destinationParent -and -not (Test-Path -LiteralPath $destinationParent)) {
+                                        New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+                                    }
+
+                                    Copy-Item -LiteralPath $logFile.FullName -Destination $destinationFile -Force -ErrorAction Stop
+                                    $copiedLogCount++
+                                }
+                                catch {
+                                    Write-Log "Failed to copy EFI log file $($logFile.FullName): $($_.Exception.Message)" "WARN"
+                                }
+                            }
+
+                            Write-Log "Collected $copiedLogCount EFI *.log file(s) into $efiLogsDir" "SUCCESS"
+                        }
+                        else {
+                            Write-Log "No EFI *.log files found" "INFO"
+                        }
                     }
                     else {
                         Write-Log "EFI mount path not accessible: $efiRoot" "WARN"

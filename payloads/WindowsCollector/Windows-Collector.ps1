@@ -187,6 +187,20 @@ function Invoke-SafeCommand {
     }
 }
 
+function Get-FreeDriveLetter {
+    $preferredLetters = @('S','T','U','V','W','X','Y','Z')
+    try {
+        $usedLetters = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name
+        foreach ($letter in $preferredLetters) {
+            if ($usedLetters -notcontains $letter) {
+                return $letter
+            }
+        }
+    } catch { }
+    return $null
+}
+
 function Get-SystemIdentity {
     $identity = @{
         ComputerName = $env:COMPUTERNAME
@@ -474,6 +488,7 @@ function Collect-SystemInformation {
     Invoke-SafeCommand -Description "ComputerSystem" -Command {
         $cs = Get-CimInstance Win32_ComputerSystem
         $bios = Get-CimInstance Win32_BIOS
+        $baseboard = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
         $os = Get-CimInstance Win32_OperatingSystem
         $cpu = Get-CimInstance Win32_Processor
         
@@ -511,6 +526,12 @@ Name: $($cpu.Name)
 Cores: $($cpu.NumberOfCores)
 Logical Processors: $($cpu.NumberOfLogicalProcessors)
 Max Clock Speed: $($cpu.MaxClockSpeed) MHz
+
+=== BaseBoard ===
+Manufacturer: $($baseboard.Manufacturer)
+Product: $($baseboard.Product)
+Serial Number: $($baseboard.SerialNumber)
+Version: $($baseboard.Version)
 "@
     } -OutputFile (Join-Path $sysInfoDir "HardwareInfo.txt")
     
@@ -548,6 +569,14 @@ Product ID: $($props.ProductId)
     Invoke-SafeCommand -Description "Hotfixes" -Command {
         Get-HotFix | Sort-Object InstalledOn -Descending | Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $sysInfoDir "InstalledHotfixes.txt")
+    try {
+        Get-HotFix -ErrorAction SilentlyContinue |
+            Select-Object HotFixID, Description, InstalledOn, InstalledBy |
+            Sort-Object InstalledOn -Descending |
+            Export-Csv -Path (Join-Path $sysInfoDir "InstalledHotfixes.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: InstalledHotfixes CSV - $($_.Exception.Message)" "WARN"
+    }
     
     # Installed software
     Write-Log "Collecting installed software..."
@@ -564,6 +593,22 @@ Product ID: $($props.ProductId)
         }
         $software | Sort-Object DisplayName -Unique | Format-Table -AutoSize -Wrap | Out-String
     } -OutputFile (Join-Path $sysInfoDir "InstalledSoftware.txt")
+    try {
+        $softwareCsv = @()
+        $softwarePaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        foreach ($path in $softwarePaths) {
+            $softwareCsv += Get-ItemProperty $path -ErrorAction SilentlyContinue |
+                Where-Object { $_.DisplayName } |
+                Select-Object DisplayName, DisplayVersion, Publisher, InstallDate, InstallLocation
+        }
+        $softwareCsv | Sort-Object DisplayName -Unique |
+            Export-Csv -Path (Join-Path $sysInfoDir "InstalledSoftware.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: InstalledSoftware CSV - $($_.Exception.Message)" "WARN"
+    }
     
     # Windows Features
     Write-Log "Collecting Windows features..."
@@ -894,6 +939,14 @@ function Collect-ProcessesAndServices {
             Select-Object Id, ProcessName, CPU, WorkingSet64, Path |
             Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $procDir "RunningProcesses.txt")
+    try {
+        Get-Process -ErrorAction SilentlyContinue |
+            Select-Object Id, ProcessName, CPU, WorkingSet64, Path |
+            Sort-Object CPU -Descending |
+            Export-Csv -Path (Join-Path $procDir "RunningProcesses.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: RunningProcesses CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "ProcessDetails" -Command {
         Get-CimInstance Win32_Process | 
@@ -908,6 +961,14 @@ function Collect-ProcessesAndServices {
             Select-Object Status, Name, DisplayName, StartType |
             Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $procDir "Services.txt")
+    try {
+        Get-Service -ErrorAction SilentlyContinue |
+            Select-Object Status, Name, DisplayName, StartType |
+            Sort-Object Status, Name |
+            Export-Csv -Path (Join-Path $procDir "Services.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: Services CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "ServiceDetails" -Command {
         Get-CimInstance Win32_Service | 
@@ -953,19 +1014,44 @@ function Collect-StorageAndDisk {
     Invoke-SafeCommand -Description "Disks" -Command {
         Get-Disk | Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $diskDir "Disks.txt")
+    try {
+        Get-Disk -ErrorAction SilentlyContinue |
+            Export-Csv -Path (Join-Path $diskDir "Disks.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: Disks CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "Partitions" -Command {
         Get-Partition | Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $diskDir "Partitions.txt")
+    try {
+        Get-Partition -ErrorAction SilentlyContinue |
+            Export-Csv -Path (Join-Path $diskDir "Partitions.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: Partitions CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "Volumes" -Command {
         Get-Volume | Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $diskDir "Volumes.txt")
+    try {
+        Get-Volume -ErrorAction SilentlyContinue |
+            Export-Csv -Path (Join-Path $diskDir "Volumes.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: Volumes CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "PhysicalDisks" -Command {
         Get-PhysicalDisk | Select-Object FriendlyName, MediaType, BusType, HealthStatus, OperationalStatus, Size | 
             Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $diskDir "PhysicalDisks.txt")
+    try {
+        Get-PhysicalDisk -ErrorAction SilentlyContinue |
+            Select-Object FriendlyName, MediaType, BusType, HealthStatus, OperationalStatus, Size |
+            Export-Csv -Path (Join-Path $diskDir "PhysicalDisks.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: PhysicalDisks CSV - $($_.Exception.Message)" "WARN"
+    }
     
     # SMART data
     Write-Log "Collecting disk health (SMART) data..."
@@ -1000,6 +1086,87 @@ $(Get-PhysicalDisk | Select-Object FriendlyName, HealthStatus, OperationalStatus
         diskpart /s $dpScript 2>&1 | Out-String
         Remove-Item $dpScript -Force -ErrorAction SilentlyContinue
     } -OutputFile (Join-Path $diskDir "Diskpart.txt")
+
+    # EFI partition file inventory (best-effort)
+    $efiCsvPath = Join-Path $diskDir "EfiFiles.csv"
+    $mountedByScript = $false
+    $efiLetter = $null
+    $efiPartition = $null
+
+    try {
+        $efiPartition = Get-Partition -ErrorAction SilentlyContinue |
+            Where-Object { $_.GptType -eq '{C12A7328-F81F-11D2-BA4B-00A0C93EC93B}' } |
+            Select-Object -First 1
+
+        if (-not $efiPartition) {
+            Write-Log "EFI partition not found; skipping EFI file inventory" "WARN"
+        }
+        else {
+            if ($efiPartition.DriveLetter) {
+                $efiLetter = [string]$efiPartition.DriveLetter
+                Write-Log "Using existing EFI mount at $efiLetter`:" "INFO"
+            }
+            else {
+                $efiLetter = Get-FreeDriveLetter
+                if (-not $efiLetter) {
+                    Write-Log "No free drive letter available for EFI mount; skipping EFI file inventory" "WARN"
+                }
+                else {
+                    try {
+                        if (Get-Command Set-Partition -ErrorAction SilentlyContinue) {
+                            Set-Partition -DiskNumber $efiPartition.DiskNumber -PartitionNumber $efiPartition.PartitionNumber -NewDriveLetter $efiLetter -ErrorAction Stop | Out-Null
+                            $mountedByScript = $true
+                            Write-Log "Temporarily mounted EFI partition to $efiLetter`:" "INFO"
+                            Start-Sleep -Seconds 1
+                        }
+                        else {
+                            Write-Log "Set-Partition not available; skipping EFI file inventory" "WARN"
+                            $efiLetter = $null
+                        }
+                    }
+                    catch {
+                        Write-Log "Failed to mount EFI partition: $($_.Exception.Message)" "WARN"
+                        $efiLetter = $null
+                    }
+                }
+            }
+
+            if ($efiLetter) {
+                try {
+                    $efiRoot = "$efiLetter`:\"
+                    if (Test-Path -LiteralPath $efiRoot) {
+                        Get-ChildItem -LiteralPath $efiRoot -Recurse -Force -ErrorAction SilentlyContinue |
+                            Where-Object { -not $_.PSIsContainer } |
+                            Select-Object FullName, CreationTimeUtc, LastWriteTimeUtc, Length |
+                            Export-Csv -Path $efiCsvPath -NoTypeInformation -Encoding UTF8 -Force
+                        Write-Log "EFI file inventory exported: $efiCsvPath" "SUCCESS"
+                    }
+                    else {
+                        Write-Log "EFI mount path not accessible: $efiRoot" "WARN"
+                    }
+                }
+                catch {
+                    Write-Log "Failed to collect EFI file inventory: $($_.Exception.Message)" "WARN"
+                }
+            }
+        }
+    }
+    catch {
+        Write-Log "EFI inventory error: $($_.Exception.Message)" "WARN"
+    }
+    finally {
+        if ($mountedByScript -and $efiPartition -and $efiLetter) {
+            try {
+                if (Get-Command Remove-PartitionAccessPath -ErrorAction SilentlyContinue) {
+                    Remove-PartitionAccessPath -DiskNumber $efiPartition.DiskNumber -PartitionNumber $efiPartition.PartitionNumber -AccessPath "$efiLetter`:\" -ErrorAction Stop | Out-Null
+                    Write-Log "Removed temporary EFI mount $efiLetter`:" "INFO"
+                }
+            }
+            catch {
+                Write-Log "Failed to remove temporary EFI drive letter $efiLetter`:: $($_.Exception.Message)" "WARN"
+            }
+        }
+    }
     
     Write-Log "Storage information collected" "SUCCESS"
 }
@@ -1107,6 +1274,14 @@ function Collect-ScheduledTasks {
             Sort-Object TaskPath, TaskName |
             Format-Table -AutoSize | Out-String
     } -OutputFile (Join-Path $taskDir "AllTasks.txt")
+    try {
+        Get-ScheduledTask -ErrorAction SilentlyContinue |
+            Select-Object TaskName, TaskPath, State, Author |
+            Sort-Object TaskPath, TaskName |
+            Export-Csv -Path (Join-Path $taskDir "AllTasks.csv") -NoTypeInformation -Encoding UTF8 -Force
+    } catch {
+        Write-Log "Failed: AllTasks CSV - $($_.Exception.Message)" "WARN"
+    }
     
     Invoke-SafeCommand -Description "TaskDetails" -Command {
         Get-ScheduledTask | Where-Object { $_.State -eq "Running" -or $_.State -eq "Ready" } |

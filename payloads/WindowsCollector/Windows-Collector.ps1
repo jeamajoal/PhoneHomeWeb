@@ -229,6 +229,229 @@ function Get-ZipFileName {
     return ($parts -join "_") + ".zip"
 }
 
+function Get-WindowsCollectorCustomConfig {
+    param(
+        [string]$UploadUrl,
+        [string]$AuthKey,
+        [string]$WorkDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($UploadUrl) -or $UploadUrl -match "<<SERVERURL>>|<SERVERURL>") {
+        Write-Log "Custom config download skipped: UploadUrl is not configured" "WARN"
+        return $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($AuthKey) -or $AuthKey -match "<<AUTHKEY>>|<AUTHKEY>") {
+        Write-Log "Custom config download skipped: AuthKey is not configured" "WARN"
+        return $null
+    }
+
+    $uploadUri = $null
+    if (-not [Uri]::TryCreate($UploadUrl, [UriKind]::Absolute, [ref]$uploadUri)) {
+        Write-Log "Custom config download skipped: UploadUrl is invalid" "WARN"
+        return $null
+    }
+
+    $downloadUrl = "{0}://{1}/payloads/WindowsCollector/download/Windows-Collector.custom.json" -f $uploadUri.Scheme, $uploadUri.Authority
+    $localConfigPath = Join-Path $WorkDir "Windows-Collector.custom.json"
+
+    try {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+        } catch {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        }
+
+        $request = [System.Net.HttpWebRequest]::Create($downloadUrl)
+        $request.Method = "GET"
+        $request.Headers.Add("X-Auth-Key", $AuthKey)
+        $request.Timeout = 60000
+        $request.ReadWriteTimeout = 60000
+
+        $response = $request.GetResponse()
+        try {
+            $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+            try {
+                $jsonText = $reader.ReadToEnd()
+            } finally {
+                $reader.Close()
+            }
+        } finally {
+            $response.Close()
+        }
+
+        if ([string]::IsNullOrWhiteSpace($jsonText)) {
+            Write-Log "Custom config download returned empty content" "WARN"
+            return $null
+        }
+
+        try {
+            $jsonText | Out-File -FilePath $localConfigPath -Encoding UTF8 -Force
+        } catch {
+            Write-Log "Could not save custom config locally: $($_.Exception.Message)" "WARN"
+        }
+
+        try {
+            $customConfig = $jsonText | ConvertFrom-Json -ErrorAction Stop
+            Write-Log "Loaded custom config from server" "SUCCESS"
+            return $customConfig
+        }
+        catch {
+            Write-Log "Custom config parse failed (strict JSON required, no comments): $($_.Exception.Message)" "WARN"
+            return $null
+        }
+    }
+    catch [System.Net.WebException] {
+        $ex = $_.Exception
+        if ($ex.Response) {
+            try {
+                $statusCode = [int]$ex.Response.StatusCode
+                if ($statusCode -eq 404) {
+                    Write-Log "No custom config found on server (404); skipping custom collections" "INFO"
+                } else {
+                    Write-Log "Custom config download failed: HTTP $statusCode $($ex.Response.StatusDescription)" "WARN"
+                }
+            } catch {
+                Write-Log "Custom config download failed: $($ex.Message)" "WARN"
+            }
+        } else {
+            Write-Log "Custom config download failed: $($ex.Message)" "WARN"
+        }
+        return $null
+    }
+    catch {
+        Write-Log "Custom config download failed: $($_.Exception.Message)" "WARN"
+        return $null
+    }
+}
+
+function Collect-CustomConfiguredFolders {
+    param(
+        [string]$OutputDir,
+        $CustomConfig
+    )
+
+    if (-not $CustomConfig) {
+        return
+    }
+
+    Write-Section "Custom Collections"
+    $customRoot = Join-Path $OutputDir "CustomCollections"
+    New-Item -ItemType Directory -Path $customRoot -Force | Out-Null
+
+    $targets = @()
+
+    try {
+        if ($CustomConfig.PSObject.Properties.Name -contains "orgProgramDataFolder") {
+            $orgFolder = [string]$CustomConfig.orgProgramDataFolder
+            if (-not [string]::IsNullOrWhiteSpace($orgFolder)) {
+                $targets += [PSCustomObject]@{
+                    Name = "ProgramData_$orgFolder"
+                    Path = (Join-Path $env:ProgramData $orgFolder)
+                    Source = "orgProgramDataFolder"
+                }
+            }
+        }
+    } catch { }
+
+    try {
+        if ($CustomConfig.PSObject.Properties.Name -contains "extraFolders" -and $CustomConfig.extraFolders) {
+            foreach ($item in @($CustomConfig.extraFolders)) {
+                if (-not $item) { continue }
+                $pathValue = [string]$item.path
+                if ([string]::IsNullOrWhiteSpace($pathValue)) { continue }
+                $nameValue = [string]$item.name
+                if ([string]::IsNullOrWhiteSpace($nameValue)) {
+                    $nameValue = Split-Path -Path $pathValue -Leaf
+                }
+                if ([string]::IsNullOrWhiteSpace($nameValue)) {
+                    $nameValue = "ExtraFolder"
+                }
+
+                if (-not [System.IO.Path]::IsPathRooted($pathValue)) {
+                    $pathValue = Join-Path $env:SystemDrive ($pathValue.TrimStart('\\','/'))
+                }
+
+                $targets += [PSCustomObject]@{
+                    Name = $nameValue
+                    Path = $pathValue
+                    Source = "extraFolders"
+                }
+            }
+        }
+    } catch { }
+
+    try {
+        if ($CustomConfig.PSObject.Properties.Name -contains "extraFolderPaths" -and $CustomConfig.extraFolderPaths) {
+            $pathIndex = 0
+            foreach ($pathRaw in @($CustomConfig.extraFolderPaths)) {
+                $pathIndex++
+                $pathValue = [string]$pathRaw
+                if ([string]::IsNullOrWhiteSpace($pathValue)) { continue }
+                $nameValue = Split-Path -Path $pathValue -Leaf
+                if ([string]::IsNullOrWhiteSpace($nameValue)) {
+                    $nameValue = "ExtraPath$pathIndex"
+                }
+
+                if (-not [System.IO.Path]::IsPathRooted($pathValue)) {
+                    $pathValue = Join-Path $env:SystemDrive ($pathValue.TrimStart('\\','/'))
+                }
+
+                $targets += [PSCustomObject]@{
+                    Name = $nameValue
+                    Path = $pathValue
+                    Source = "extraFolderPaths"
+                }
+            }
+        }
+    } catch { }
+
+    if (-not $targets -or $targets.Count -eq 0) {
+        Write-Log "Custom config has no recognized collection targets" "WARN"
+        return
+    }
+
+    $attempted = 0
+    $collected = 0
+    $missing = 0
+    $failed = 0
+
+    foreach ($target in $targets) {
+        $attempted++
+        $sourcePath = [string]$target.Path
+        $safeName = Get-SafeFileName ([string]$target.Name)
+        if ([string]::IsNullOrWhiteSpace($safeName)) {
+            $safeName = "Custom_$attempted"
+        }
+
+        $destPath = Join-Path $customRoot $safeName
+
+        if (-not (Test-Path -LiteralPath $sourcePath)) {
+            $missing++
+            Write-Log "Custom path not found ($($target.Source)): $sourcePath" "WARN"
+            continue
+        }
+
+        try {
+            $item = Get-Item -LiteralPath $sourcePath -ErrorAction Stop
+            if ($item.PSIsContainer) {
+                Copy-Item -Path $sourcePath -Destination $destPath -Recurse -Force -ErrorAction Stop
+            } else {
+                New-Item -ItemType Directory -Path $destPath -Force | Out-Null
+                Copy-Item -LiteralPath $sourcePath -Destination $destPath -Force -ErrorAction Stop
+            }
+            $collected++
+            Write-Log "Collected custom path: $sourcePath -> $destPath" "SUCCESS"
+        }
+        catch {
+            $failed++
+            Write-Log "Failed custom collection '$sourcePath': $($_.Exception.Message)" "WARN"
+        }
+    }
+
+    Write-Log "Custom collections summary: attempted=$attempted collected=$collected missing=$missing failed=$failed"
+}
+
 # ============================================================================
 # Collection Functions
 # ============================================================================
@@ -1070,10 +1293,16 @@ function Upload-CollectionZip {
 # ============================================================================
 
 function Invoke-Collection {
-    param([string]$WorkDir)
+    param(
+        [string]$WorkDir,
+        [string]$UploadUrl,
+        [string]$AuthKey
+    )
     
     $collectDir = Join-Path $WorkDir "Collection"
     New-Item -ItemType Directory -Path $collectDir -Force | Out-Null
+
+    $customConfig = Get-WindowsCollectorCustomConfig -UploadUrl $UploadUrl -AuthKey $AuthKey -WorkDir $WorkDir
     
     # Run all collection functions (suppress any output to prevent polluting return value)
     Collect-SystemInformation -OutputDir $collectDir | Out-Null
@@ -1088,6 +1317,7 @@ function Invoke-Collection {
     Collect-DriverInfo -OutputDir $collectDir | Out-Null
     Collect-ScheduledTasks -OutputDir $collectDir | Out-Null
     Collect-FileInventory -OutputDir $collectDir | Out-Null
+    Collect-CustomConfiguredFolders -OutputDir $collectDir -CustomConfig $customConfig | Out-Null
     
     return $collectDir
 }
@@ -1123,7 +1353,7 @@ try {
     Write-Log ""
     
     # Run collection
-    $collectDir = Invoke-Collection -WorkDir $workDir
+    $collectDir = Invoke-Collection -WorkDir $workDir -UploadUrl $UploadUrl -AuthKey $AuthKey
     
     # Flush current log and copy snapshot into collection folder for the ZIP
     Write-Section "Finalizing"

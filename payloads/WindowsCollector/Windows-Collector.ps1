@@ -236,12 +236,12 @@ function Get-WindowsCollectorCustomConfig {
         [string]$WorkDir
     )
 
-    if ([string]::IsNullOrWhiteSpace($UploadUrl) -or $UploadUrl -match "<<SERVERURL>>|<SERVERURL>") {
+    if ([string]::IsNullOrWhiteSpace($UploadUrl) -or $UploadUrl -match "<SERVERURL>") {
         Write-Log "Custom config download skipped: UploadUrl is not configured" "WARN"
         return $null
     }
 
-    if ([string]::IsNullOrWhiteSpace($AuthKey) -or $AuthKey -match "<<AUTHKEY>>|<AUTHKEY>") {
+    if ([string]::IsNullOrWhiteSpace($AuthKey) -or $AuthKey -match "<AUTHKEY>") {
         Write-Log "Custom config download skipped: AuthKey is not configured" "WARN"
         return $null
     }

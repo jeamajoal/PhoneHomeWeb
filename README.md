@@ -186,6 +186,7 @@ PhoneHomeWeb uses two authentication levels:
 2. **AUTH_KEY_HIGH_TRUST** (Elevated) - Required for sensitive operations
    - Listing uploaded files (`GET /uploads`)
    - Downloading uploaded files (`GET /download`)
+   - Deleting uploaded files (`DELETE /uploads`)
 
 **Generating secure keys:**
 
@@ -640,6 +641,7 @@ These endpoints require the `X-Auth-Key` header with your **high-trust** key.
 |----------|--------|-------------|
 | `/uploads` | GET | List all uploaded files |
 | `/download` | GET | Download an uploaded file (requires `X-Filename` header) |
+| `/uploads` | DELETE | Delete an uploaded file (requires `X-Filename` header) |
 
 **Example: List uploaded files**
 
@@ -655,6 +657,14 @@ curl -s "https://your-server:3500/download" \
   -H "X-Auth-Key: your-high-trust-key" \
   -H "X-Filename: COMPUTER_Serial_20240101-120000_WindowsLogs.zip" \
   -o downloaded.zip
+```
+
+**Example: Delete an uploaded file**
+
+```bash
+curl -s -X DELETE "https://your-server:3500/uploads" \
+  -H "X-Auth-Key: your-high-trust-key" \
+  -H "X-Filename: COMPUTER_Serial_20240101-120000_WindowsLogs.zip"
 ```
 
 ### Installer Endpoints

@@ -326,6 +326,54 @@ module.exports = function registerRoutes(app, deps) {
   });
 
   // ---------------------------------------------------------------------------
+  // Delete specific uploaded file (high-trust only)
+  // ---------------------------------------------------------------------------
+  app.delete("/uploads", (req, res) => {
+    if (req.isHighTrust !== true) {
+      console.log(`[X] BLOCKED: Delete requires high-trust authentication key`);
+      console.log("=".repeat(80) + "\n");
+      return res.status(403).json({
+        success: false,
+        error: "High-trust authentication key required",
+      });
+    }
+
+    if (!req.get("X-Filename")) {
+      return res.status(400).json({ success: false, error: "X-Filename header required" });
+    }
+
+    const filenameHeader = req.get("X-Filename");
+
+    try {
+      const filename = sanitizePath(filenameHeader);
+      const filePath = path.join(uploadsDir, filename);
+
+      const resolvedPath = path.resolve(filePath);
+      const resolvedUploadsDir = path.resolve(uploadsDir);
+      if (!resolvedPath.startsWith(resolvedUploadsDir)) {
+        console.log(`[X] BLOCKED: Path traversal attempt detected: ${filenameHeader}`);
+        return res.status(403).json({ success: false, error: "Access denied" });
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, error: "File not found" });
+      }
+
+      if (!fs.statSync(filePath).isFile()) {
+        return res.status(400).json({ success: false, error: "Invalid file target" });
+      }
+
+      const safeFilename = sanitizeFilename(path.basename(filename));
+      fs.unlinkSync(filePath);
+
+      res.json({ success: true, deleted: safeFilename });
+    } catch (error) {
+      console.error("Path sanitization error:", error.message);
+      res.status(400).json({ success: false, error: "Invalid filename parameter" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // List available payloads
   // ---------------------------------------------------------------------------
   app.get("/payloads", (req, res) => {

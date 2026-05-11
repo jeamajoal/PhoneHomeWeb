@@ -271,6 +271,44 @@ LATE_CMDS+=("in-target sh -c 'sed -i \"s/^#*PermitRootLogin.*/PermitRootLogin pr
 # Sudo NOPASSWD for the user (key-only login otherwise leaves sudo unusable)
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
 
+# /etc/issue dynamic updater — shows hostname, all IP addresses, and boot time
+# on every TTY login prompt so the machine is easy to find on a DHCP network.
+UPDATE_ISSUE_B64="$(base64 -w0 <<'_SCRIPT_'
+#!/bin/sh
+BOOT="$(uptime -s 2>/dev/null || echo unknown)"
+IPS="$(hostname -I 2>/dev/null | sed 's/  */ /g; s/ $//')"
+cat > /etc/issue <<ISSUE
+
+Debian GNU/Linux \n \l
+
+  Hostname : $(hostname)
+  IP Addr  : ${IPS:-not assigned yet}
+  Boot Time: ${BOOT}
+
+ISSUE
+_SCRIPT_
+)"
+
+UPDATE_ISSUE_SVC_B64="$(base64 -w0 <<'_SVC_'
+[Unit]
+Description=Update /etc/issue with hostname, IP addresses, and boot time
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-issue
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+_SVC_
+)"
+
+LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_B64 | base64 -d > /usr/local/sbin/update-issue && chmod +x /usr/local/sbin/update-issue'")
+LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_SVC_B64 | base64 -d > /etc/systemd/system/update-issue.service'")
+LATE_CMDS+=("in-target systemctl enable update-issue.service")
+
 # Join late_commands with semicolons (debian-installer joins on newlines via \\)
 LATE_JOINED=""
 for c in "${LATE_CMDS[@]}"; do

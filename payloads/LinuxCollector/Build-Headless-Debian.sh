@@ -415,35 +415,34 @@ if [[ -f "$TXT_CFG" ]]; then
 label phw-headless
     menu label ^PhoneHomeWeb Headless Debian (Unattended Install)
     kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/preseed.cfg quiet ---
+    append initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/preseed.cfg DEBCONF_DEBUG=5 ---
 TXT
     log_detail "Added isolinux entry: phw-headless"
 fi
 
 if [[ -f "$GRUB_CFG" ]]; then
-    # Make our entry the GRUB default
-    sed -i 's/^set default=.*/set default="0"/' "$GRUB_CFG"
-    sed -i 's/^set timeout=.*/set timeout=3/' "$GRUB_CFG"
-    # Prepend our entry so it wins index 0
+    # Force our entry to win regardless of any saved_entry / submenu logic
+    # already present in the original grub.cfg.
     NEW_GRUB="$WORK_DIR/grub-prepend.cfg"
     cat > "$NEW_GRUB" <<'GRUB'
+# --- PhoneHomeWeb headless override (inserted by Build-Headless-Debian.sh) ---
+set default="0"
+set timeout=3
+set timeout_style=menu
 menuentry --hotkey=p 'PhoneHomeWeb Headless Debian (Unattended Install)' {
     set background_color=black
-    linux    /install.amd/vmlinuz vga=788 auto=true priority=critical preseed/file=/preseed.cfg quiet ---
+    echo 'Loading PhoneHomeWeb headless installer kernel...'
+    linux    /install.amd/vmlinuz auto=true priority=critical preseed/file=/preseed.cfg DEBCONF_DEBUG=5 ---
+    echo 'Loading initrd...'
     initrd   /install.amd/initrd.gz
 }
+# --- end PhoneHomeWeb override ---
 GRUB
-    # Insert after the first 'set timeout' line (preserves theme/header)
-    awk -v entry_file="$NEW_GRUB" '
-        BEGIN { inserted=0 }
-        { print }
-        !inserted && /^set timeout=/ {
-            while ((getline line < entry_file) > 0) print line
-            close(entry_file)
-            inserted=1
-        }
-    ' "$GRUB_CFG" > "$GRUB_CFG.new" && mv "$GRUB_CFG.new" "$GRUB_CFG"
-    log_detail "Added grub entry: phw-headless"
+    # Strip any existing top-level set default= / set timeout= lines so our
+    # values are the ones that take effect, then prepend our block.
+    sed -i -E '/^[[:space:]]*set[[:space:]]+default=/d; /^[[:space:]]*set[[:space:]]+timeout=/d; /^[[:space:]]*set[[:space:]]+timeout_style=/d' "$GRUB_CFG"
+    cat "$NEW_GRUB" "$GRUB_CFG" > "$GRUB_CFG.new" && mv "$GRUB_CFG.new" "$GRUB_CFG"
+    log_detail "Added grub entry: phw-headless (forced default=0, timeout=3)"
 fi
 
 # -----------------------------------------------------------------------------

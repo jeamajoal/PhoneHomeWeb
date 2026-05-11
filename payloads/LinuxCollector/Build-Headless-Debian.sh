@@ -474,8 +474,10 @@ XORRISO_OPTS=(
     -boot-load-size 4 -boot-info-table -no-emul-boot
 )
 # Hybrid MBR for BIOS/USB boot (only if isohdpfx.bin available)
+# Insert AFTER `-as mkisofs` (the first two elements) so it stays inside the
+# mkisofs personality; otherwise xorriso treats it as the personality name.
 if [[ -n "$ISOHDPFX" ]]; then
-    XORRISO_OPTS=( "${XORRISO_OPTS[@]:0:1}" -isohybrid-mbr "$ISOHDPFX" "${XORRISO_OPTS[@]:1}" )
+    XORRISO_OPTS=( "${XORRISO_OPTS[@]:0:2}" -isohybrid-mbr "$ISOHDPFX" "${XORRISO_OPTS[@]:2}" )
 fi
 # UEFI boot if EFI image is present
 if [[ -f "$EXTRACT_DIR/boot/grub/efi.img" ]]; then

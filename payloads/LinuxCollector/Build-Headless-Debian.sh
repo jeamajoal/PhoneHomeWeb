@@ -489,7 +489,19 @@ if [[ -f "$EXTRACT_DIR/boot/grub/efi.img" ]]; then
     )
 fi
 
-xorriso "${XORRISO_OPTS[@]}" -o "$OUTPUT_ISO" "$EXTRACT_DIR" 2>&1 | tail -n 5
+# Write to a WSL-local path first. xorriso with hybrid MBR/GPT performs
+# seeky writes that the Windows drvfs (/mnt/c/...) handles poorly and often
+# aborts mid-write with "libisofs: MISHAP : Image write cancelled".
+STAGED_ISO="$WORK_DIR/$(basename "$OUTPUT_ISO")"
+xorriso "${XORRISO_OPTS[@]}" -o "$STAGED_ISO" "$EXTRACT_DIR" 2>&1 | tail -n 5
+
+[[ -f "$STAGED_ISO" ]] || die "ISO repack failed."
+
+# Move into final location (may be on Windows drvfs); use cp+rm so cross-fs works.
+log_detail "Copying ISO to final destination: $OUTPUT_ISO"
+mkdir -p "$(dirname "$OUTPUT_ISO")"
+cp -f "$STAGED_ISO" "$OUTPUT_ISO" || die "Failed to copy ISO to $OUTPUT_ISO"
+rm -f "$STAGED_ISO"
 
 [[ -f "$OUTPUT_ISO" ]] || die "ISO repack failed."
 log_ok "ISO created: $OUTPUT_ISO ($(du -h "$OUTPUT_ISO" | cut -f1))"

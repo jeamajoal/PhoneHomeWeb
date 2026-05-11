@@ -342,17 +342,85 @@ cat >> "$PRESEED" <<PRESEED_EOF
 d-i user-setup/allow-password-weak boolean true
 d-i user-setup/encrypt-home boolean false
 
-### Partitioning - whole disk, single ext4 + swap, no LVM, no encryption
+### Partitioning - whole disk, single ext4 + swap, no LVM, no encryption.
+### Pick the first non-removable disk reported by d-i and clear any leftover
+### bootloader/RAID/LVM signatures so partman won't prompt for confirmations.
+d-i partman/early_command string \
+    TARGET=\$(list-devices disk | head -n1); \
+    debconf-set partman-auto/disk "\$TARGET"; \
+    debconf-set grub-installer/bootdev "\$TARGET"; \
+    if [ -n "\$TARGET" ]; then \
+        for p in \$(ls \${TARGET}* 2>/dev/null | grep -v "^\${TARGET}\$"); do wipefs -a "\$p" || true; done; \
+        wipefs -a "\$TARGET" || true; \
+        dd if=/dev/zero of="\$TARGET" bs=1M count=10 conv=notrunc || true; \
+    fi
+
 d-i partman-auto/method string regular
-d-i partman-auto/choose_recipe select atomic
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-md/device_remove_md boolean true
-d-i partman-auto/disk string /dev/sda /dev/vda /dev/nvme0n1
 d-i partman-basicfilesystems/no_swap boolean false
+
+### Explicit recipe with ESP so UEFI installs succeed (EFI installer needs
+### a 538MB+ vfat ESP flagged 'esp'). On legacy BIOS the ESP is harmless.
+d-i partman-auto/expert_recipe string                         \
+    phw-headless ::                                           \
+        538 538 1075 free                                     \
+            \$iflabel{ gpt }                                  \
+            \$reusemethod{ }                                  \
+            method{ efi }                                     \
+            format{ }                                         \
+        .                                                     \
+        1024 4096 200% linux-swap                             \
+            method{ swap }                                    \
+            format{ }                                         \
+        .                                                     \
+        2048 10000 -1 ext4                                    \
+            method{ format }                                  \
+            format{ }                                         \
+            use_filesystem{ }                                  \
+            filesystem{ ext4 }                                 \
+            mountpoint{ / }                                    \
+        .
+
+d-i partman-auto/choose_recipe select phw-headless
 d-i partman-partitioning/confirm_write_new_label boolean true
 d-i partman/choose_partition select finish
 d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
+d-i partman-efi/non_efi_system boolean true
+d-i partman-partitioning/choose_label string gpt
+d-i partman-partitioning/default_label string gpt
+
+### Explicit recipe with ESP so UEFI installs succeed (EFI installer needs
+### a 538MB+ vfat ESP flagged 'esp'). On legacy BIOS the ESP is harmless.
+d-i partman-auto/expert_recipe string                         \
+    phw-headless ::                                           \
+        538 538 1075 free                                     \
+            \$iflabel{ gpt }                                  \
+            \$reusemethod{ }                                  \
+            method{ efi }                                     \
+            format{ }                                         \
+        .                                                     \
+        1024 4096 200% linux-swap                             \
+            method{ swap }                                    \
+            format{ }                                         \
+        .                                                     \
+        2048 10000 -1 ext4                                    \
+            method{ format }                                  \
+            format{ }                                         \
+            use_filesystem{ }                                  \
+            filesystem{ ext4 }                                 \
+            mountpoint{ / }                                    \
+        .
+
+d-i partman-auto/choose_recipe select phw-headless
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-efi/non_efi_system boolean true
+d-i partman-partitioning/choose_label string gpt
+d-i partman-partitioning/default_label string gpt
 
 ### Base + tasksel - NO desktop, no laptop task; just standard utilities
 tasksel tasksel/first multiselect standard, ssh-server

@@ -255,12 +255,23 @@ fi
 # Debian's default sshd_config contains or includes (sed on main file is
 # unreliable on Debian 12/13 which use Include /etc/ssh/sshd_config.d/*.conf).
 if [[ "$ALLOW_PASSWORD" -eq 1 ]]; then
-    PW_AUTH_LINE="PasswordAuthentication yes"
+    SSH_AUTH_BLOCK="$(cat <<'EOF'
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+ChallengeResponseAuthentication yes
+EOF
+)"
 else
-    PW_AUTH_LINE="PasswordAuthentication no"
+    SSH_AUTH_BLOCK="$(cat <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+AuthenticationMethods publickey
+EOF
+)"
 fi
 LATE_CMDS+=("in-target sh -c 'grep -qF \"Include /etc/ssh/sshd_config.d/*.conf\" /etc/ssh/sshd_config || echo \"Include /etc/ssh/sshd_config.d/*.conf\" >> /etc/ssh/sshd_config'")
-SSHD_DROPIN_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$PW_AUTH_LINE" | base64 -w0)"
+SSHD_DROPIN_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$SSH_AUTH_BLOCK" | base64 -w0)"
 LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d && echo $SSHD_DROPIN_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
 # Make the created user a passwordless sudoer for admin bootstrap.
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
@@ -361,7 +372,9 @@ else
     # 'pipefail' would abort the script with exit 141. Disable pipefail locally.
     RAND_PW="$(set +o pipefail; tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
     echo "d-i passwd/user-password-crypted password $(hash_password "$RAND_PW")" >> "$PRESEED"
-    LATE_JOINED="$LATE_JOINED && in-target passwd -l $USERNAME_VAL"
+    # Do not lock the account with passwd -l in key-only mode; on Debian with
+    # PAM this can block pubkey auth entirely. We keep an unknown random local
+    # password and enforce key-only SSH via sshd settings.
 fi
 
 cat >> "$PRESEED" <<PRESEED_EOF

@@ -324,8 +324,6 @@ cd "$env:USERPROFILE\HeadlessDebianBuilder"
 | `--output PATH` | Output ISO path (default `./headless-debian-<date>.iso`). |
 | `--device PATH` | USB device to write the ISO to (`dd`). |
 | `--skip-write` | ISO only; never write to a device. |
-| `--no-collector` | Don't embed PhoneHomeWeb collector pull in `late_command`. |
-| `--server-url URL` / `--auth-key KEY` | PhoneHomeWeb credentials for collector embed. |
 | `--work-dir PATH` | Working dir (default `/var/tmp/headless-debian-build`). |
 | `--keep-work` | Don't delete work dir. |
 | `--non-interactive` | No prompts. |
@@ -335,14 +333,12 @@ cd "$env:USERPROFILE\HeadlessDebianBuilder"
 - Hostname / user / timezone / mirror as specified.
 - Packages: `standard` task + `openssh-server sudo curl ca-certificates` (+ any `--extra-packages`).
 - SSH: `PasswordAuthentication no` by default (key only), `PermitRootLogin prohibit-password`.
-- Sudo: configured user has `NOPASSWD` (so SSH key login still leaves sudo working).
-- If server credentials were embedded, `/opt/phw/Linux-Collector.sh` and `/opt/phw/upload-file.sh` are pulled into the installed system.
+- `late_command` is intentionally limited to SSH bootstrap only: service enable, `authorized_keys` injection, permissions/ownership, and sshd policy drop-in.
 
 ### Login
 
 ```bash
 ssh phw@<host-or-ip>          # default user
-sudo -i                       # passwordless sudo
 ```
 
 The credentials sidecar (`*.info.txt`) created next to the ISO contains the hostname, generated password (if any), and SHA256.

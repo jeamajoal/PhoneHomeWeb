@@ -57,15 +57,6 @@
 .PARAMETER ExtraPackages
     Space-separated extra packages.
 
-.PARAMETER NoCollector
-    Skip embedding the PhoneHomeWeb collector pull.
-
-.PARAMETER ServerUrl
-    PhoneHomeWeb server URL.
-
-.PARAMETER AuthKey
-    PhoneHomeWeb auth key.
-
 .PARAMETER WslDistro
     WSL distribution to use (default Debian).
 
@@ -106,9 +97,6 @@ param(
     [string]$Keymap = "us",
     [string]$Mirror = "deb.debian.org",
     [string]$ExtraPackages,
-    [switch]$NoCollector,
-    [string]$ServerUrl = "<<SERVERURL>>",
-    [string]$AuthKey   = "<<AUTHKEY>>",
     [string]$WslDistro = "Debian",
     [switch]$SkipUsbAttach,
     [switch]$SkipWrite,
@@ -298,11 +286,8 @@ chmod +x '$stageDirWsl'/*.sh
     if ($Keymap)           { $bashArgs += @('--keymap', $Keymap) }
     if ($Mirror)           { $bashArgs += @('--mirror', $Mirror) }
     if ($ExtraPackages)    { $bashArgs += @('--extra-packages', $ExtraPackages) }
-    if ($NoCollector)      { $bashArgs += '--no-collector' }
     if ($KeepWork)         { $bashArgs += '--keep-work' }
     if ($NonInteractive)   { $bashArgs += '--non-interactive' }
-    if ($ServerUrl -and $ServerUrl -notmatch '<<SERVERURL>>') { $bashArgs += @('--server-url', $ServerUrl) }
-    if ($AuthKey   -and $AuthKey   -notmatch '<<AUTHKEY>>')   { $bashArgs += @('--auth-key',   $AuthKey)   }
 
     $quoted = ($bashArgs | ForEach-Object { "'" + ($_ -replace "'", "'\''") + "'" }) -join ' '
     $runCmd = "cd '$stageDirWsl' && bash '$stageDirWsl/Build-Headless-Debian.sh' $quoted"

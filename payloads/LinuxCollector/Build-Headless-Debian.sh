@@ -32,9 +32,6 @@
 #   --netinst-url URL   Download netinst ISO from this URL.
 #   --work-dir PATH     Working dir (default: /var/tmp/headless-debian-build)
 #   --keep-work         Don't delete the work dir.
-#   --server-url URL    PhoneHomeWeb server URL (embedded for collector pull).
-#   --auth-key KEY      PhoneHomeWeb auth key.
-#   --no-collector      Don't embed PhoneHomeWeb collector pull in late_command.
 #   --non-interactive   No prompts; fail if required input is missing.
 #   -h, --help          Show this help.
 #
@@ -74,11 +71,6 @@ WORK_DIR="/var/tmp/headless-debian-build"
 KEEP_WORK=0
 SSH_KEY_PATH=""
 NON_INTERACTIVE=0
-NO_COLLECTOR=0
-
-# Server creds (placeholders replaced when downloaded from PhoneHomeWeb)
-PHW_SERVER_URL="${PHW_SERVER_URL:-<<SERVERURL>>}"
-PHW_AUTH_KEY="${PHW_AUTH_KEY:-<<AUTHKEY>>}"
 
 # Default netinst URL — points at the "current" Debian stable amd64 netinst.
 # This file is updated by Debian's mirrors with each point release.
@@ -119,9 +111,6 @@ while [[ $# -gt 0 ]]; do
         --work-dir)        WORK_DIR="$2"; shift 2;;
         --keep-work)       KEEP_WORK=1; shift;;
         --ssh-key)         SSH_KEY_PATH="$2"; shift 2;;
-        --server-url)      PHW_SERVER_URL="$2"; shift 2;;
-        --auth-key)        PHW_AUTH_KEY="$2"; shift 2;;
-        --no-collector)    NO_COLLECTOR=1; shift;;
         --non-interactive) NON_INTERACTIVE=1; shift;;
         -h|--help)         usage; exit 0;;
         *) die "Unknown option: $1 (use --help)";;
@@ -271,51 +260,11 @@ else
 fi
 SSHD_DROPIN_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$PW_AUTH_LINE" | base64 -w0)"
 LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d && echo $SSHD_DROPIN_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
-# Sudo NOPASSWD for the user (key-only login otherwise leaves sudo unusable)
-LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
 
-# /etc/issue dynamic updater — shows hostname, all IP addresses, and boot time
-# on every TTY login prompt so the machine is easy to find on a DHCP network.
-UPDATE_ISSUE_B64="$(base64 -w0 <<'_SCRIPT_'
-#!/bin/sh
-BOOT="$(uptime -s 2>/dev/null || echo unknown)"
-IPS="$(hostname -I 2>/dev/null | sed 's/  */ /g; s/ $//')"
-cat > /etc/issue <<ISSUE
-
-Debian GNU/Linux \n \l
-
-  Hostname : $(hostname)
-  IP Addr  : ${IPS:-not assigned yet}
-  Boot Time: ${BOOT}
-
-ISSUE
-_SCRIPT_
-)"
-
-UPDATE_ISSUE_SVC_B64="$(base64 -w0 <<'_SVC_'
-[Unit]
-Description=Update /etc/issue with hostname, IP addresses, and boot time
-After=network.target
-Wants=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/update-issue
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-_SVC_
-)"
-
-LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_B64 | base64 -d > /usr/local/sbin/update-issue && chmod +x /usr/local/sbin/update-issue'")
-LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_SVC_B64 | base64 -d > /etc/systemd/system/update-issue.service'")
-LATE_CMDS+=("in-target systemctl enable update-issue.service")
-
-# Join late_commands with semicolons (debian-installer joins on newlines via \\)
+# Join late_commands with AND so any failure aborts preseed cleanly.
 LATE_JOINED=""
 for c in "${LATE_CMDS[@]}"; do
-    if [[ -z "$LATE_JOINED" ]]; then LATE_JOINED="$c"; else LATE_JOINED="$LATE_JOINED ; $c"; fi
+    if [[ -z "$LATE_JOINED" ]]; then LATE_JOINED="$c"; else LATE_JOINED="$LATE_JOINED && $c"; fi
 done
 
 cat > "$PRESEED" <<PRESEED_EOF
@@ -369,7 +318,7 @@ else
     # 'pipefail' would abort the script with exit 141. Disable pipefail locally.
     RAND_PW="$(set +o pipefail; tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
     echo "d-i passwd/user-password-crypted password $(hash_password "$RAND_PW")" >> "$PRESEED"
-    LATE_JOINED="in-target passwd -l $USERNAME_VAL ; $LATE_JOINED"
+    LATE_JOINED="$LATE_JOINED && in-target passwd -l $USERNAME_VAL"
 fi
 
 cat >> "$PRESEED" <<PRESEED_EOF

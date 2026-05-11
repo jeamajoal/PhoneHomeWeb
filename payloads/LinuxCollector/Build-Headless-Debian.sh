@@ -270,13 +270,6 @@ fi
 LATE_CMDS+=("in-target sh -c 'sed -i \"s/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/\" /etc/ssh/sshd_config'")
 # Sudo NOPASSWD for the user (key-only login otherwise leaves sudo unusable)
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
-# Optional: pull PhoneHomeWeb collector after install
-if [[ "$NO_COLLECTOR" -ne 1 && -n "$PHW_SERVER_URL" && "$PHW_SERVER_URL" != *"<SERVERURL>"* ]]; then
-    LATE_CMDS+=("in-target install -d -m 0755 /opt/phw")
-    LATE_CMDS+=("in-target sh -c 'curl -fsSL -H \"X-Auth-Key: $PHW_AUTH_KEY\" $PHW_SERVER_URL/payloads/LinuxCollector/download/Linux-Collector.sh -o /opt/phw/Linux-Collector.sh || true'")
-    LATE_CMDS+=("in-target sh -c 'curl -fsSL -H \"X-Auth-Key: $PHW_AUTH_KEY\" $PHW_SERVER_URL/payloads/LinuxCollector/download/upload-file.sh   -o /opt/phw/upload-file.sh   || true'")
-    LATE_CMDS+=("in-target chmod +x /opt/phw/*.sh")
-fi
 
 # Join late_commands with semicolons (debian-installer joins on newlines via \\)
 LATE_JOINED=""

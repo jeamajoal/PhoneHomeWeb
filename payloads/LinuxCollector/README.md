@@ -2,7 +2,13 @@
 
 This folder contains the Linux-based offline Windows diagnostic collector and USB builder. It provides a complete solution for booting Debian Live, unlocking BitLocker drives, and collecting diagnostic data from offline Windows installations.
 
-As of 2026-02, the LinuxCollector USB build process is **Linux-only** (use the Bash builder).
+As of 2026-05, two builders are available:
+
+- **Live diagnostic USB** — `Build-Linux-USB.sh` (Linux/WSL2) and `Build-Linux-USB.ps1` (Windows wrapper). Produces a bootable Debian Live USB with all recovery tools pre-installed.
+- **Headless Debian installer ISO** — `Build-Headless-Debian.sh` and `Build-Headless-Debian.ps1`. Produces an *unattended* Debian netinst ISO that installs a permanent, headless Debian box with `openssh-server` and an injected SSH public key.
+
+Windows users do not need a Linux box; the PowerShell wrappers run the bash builders inside WSL2.
+
 
 ## Overview
 
@@ -30,6 +36,21 @@ The LinuxCollector is the Linux equivalent of the WinPE Collector:
   - Customizes the live environment with recovery and diagnostic tools
   - Creates a multi-partition USB
 
+- `Build-Linux-USB.ps1`
+  - **Windows wrapper** — invokes the bash builder inside WSL2
+  - Uses `usbipd-win` to attach the target USB into WSL for direct write
+  - Translates Windows paths (e.g. `-DebianIso C:\ISOs\debian-live.iso`) automatically
+
+- `Build-Headless-Debian.sh`
+  - **Bash script** that produces an unattended Debian netinst installer ISO
+  - Embeds a generated `preseed.cfg` into the netinst initrd
+  - Configures hostname, sudo user, injected `authorized_keys`, openssh-server
+  - Optionally writes the ISO directly to a USB device with `dd`
+
+- `Build-Headless-Debian.ps1`
+  - **Windows wrapper** for the headless ISO builder (same WSL2 + usbipd pattern)
+  - Output ISO can be written to a Windows path so it appears on the Windows filesystem
+
 - `install-linuxcollector.sh`
   - **One-liner installer** for deploying the collector to a running Debian Live system
   - Downloads and runs the collector automatically
@@ -37,6 +58,12 @@ The LinuxCollector is the Linux equivalent of the WinPE Collector:
 - `install-linux-usb-builder.sh`
   - **USB builder installer** for technician workstations
   - Downloads the USB builder to the local machine
+
+- `install-linux-usb-builder.ps1`
+  - **Windows installer** that downloads `Build-Linux-USB.ps1` + `Build-Linux-USB.sh` into `%USERPROFILE%\LinuxUSBBuilder`
+
+- `install-headless-debian-builder.sh` / `install-headless-debian-builder.ps1`
+  - **Headless ISO builder installers** for Linux and Windows technician workstations
 
 - `upload-file.sh`
   - **Standalone upload helper** - live-pull script for uploading files/directories
@@ -73,8 +100,11 @@ Then follow the prompts to create a bootable USB with all tools pre-installed.
 
 | Endpoint | Description |
 |----------|-------------|
-| `/linux-usb-installer` | Downloads USB builder to technician workstation |
-| `/linuxcollector-installer` | One-liner deployment of collector to Debian Live |
+| `/linux-usb-installer` | Linux installer for the live-USB builder |
+| `/linux-usb-installer-windows` | Windows (PowerShell) installer for the live-USB builder |
+| `/linuxcollector-installer` | One-liner deployment of collector to a running Debian Live |
+| `/headless-debian-installer` | Linux installer for the headless Debian ISO builder |
+| `/headless-debian-installer-windows` | Windows (PowerShell) installer for the headless Debian ISO builder |
 | `/linux-upload-script` | Live-pull upload helper script (credentials injected) |
 | `/linux-collect-logs` | Live-pull Windows log collector (credentials injected) |
 | `/payloads/LinuxCollector/download/<file>` | Download individual files |
@@ -148,6 +178,184 @@ sudo ./Build-Linux-USB.sh --skip-write --keep-work
 When you download `Build-Linux-USB.sh` from the server via the `/linux-usb-installer` endpoint, the server automatically injects your server URL and auth key into the script. This means all scripts written to the USB will have the correct credentials embedded.
 
 If you run the builder from a local copy (without downloading from server), use `--server-url` and `--auth-key` to embed credentials into the USB scripts.
+
+### Build from Windows (PowerShell + WSL2)
+
+The Windows wrapper `Build-Linux-USB.ps1` runs the bash builder inside WSL2. The actual Linux work (squashfs unpack/repack, chroot, package install, partitioning) all happens inside the WSL distro.
+
+**Prerequisites:**
+
+```powershell
+# 1. Install WSL2 + a Debian distro (admin; reboot if WSL is brand new)
+wsl --install -d Debian
+
+# 2. (Only if you want the script to write directly to a USB stick)
+winget install --id dorssel.usbipd-win
+```
+
+**One-liner install of the builder:**
+
+```powershell
+# Downloads Build-Linux-USB.ps1 + Build-Linux-USB.sh into %USERPROFILE%\LinuxUSBBuilder
+iwr https://yourserver:3500/linux-usb-installer-windows -Headers @{ 'X-Auth-Key' = 'your-key' } -UseBasicParsing | iex
+```
+
+**Typical use (build only, no USB write):**
+
+```powershell
+cd "$env:USERPROFILE\LinuxUSBBuilder"
+.\Build-Linux-USB.ps1 -SkipWrite -DebianIso C:\ISOs\debian-live-12.5.0-amd64-standard.iso
+```
+
+**Build and write to a USB stick (admin required for `usbipd bind`/`attach`):**
+
+```powershell
+# 1. Identify the USB bus ID
+.\Build-Linux-USB.ps1 -ListUsb
+
+# 2. Run elevated PowerShell, then:
+.\Build-Linux-USB.ps1 -BusId 2-3 -DebianIso C:\ISOs\debian-live-12.5.0-amd64-standard.iso
+```
+
+The wrapper attaches the USB into WSL via usbipd, runs the bash builder against `/dev/sdX` inside WSL, and detaches the USB on exit.
+
+#### PowerShell Parameters (live-USB builder)
+
+| Parameter | Description |
+|-----------|-------------|
+| `-Device <path>` | USB device path *as seen inside WSL* after attach (e.g. `/dev/sdb`). Optional if `-BusId` is given. |
+| `-BusId <id>` | usbipd-win bus ID (e.g. `2-3`) of the USB stick to attach into WSL. |
+| `-ListUsb` | List USB devices visible to usbipd-win and exit. |
+| `-DebianIso <path>` | Pre-downloaded Debian Live ISO; Windows path supported. |
+| `-IsoUrl <url>` | Specific ISO URL to download. |
+| `-PersistSize <MB>` | Persistence partition size in MB (default 10240). |
+| `-NoPersistence` | Disable persistence. |
+| `-SkipWrite` | Build only; do not write to USB. |
+| `-SkipUsbAttach` | Do not call usbipd; let the bash script prompt or use a pre-attached device. |
+| `-WorkDir <path>` | Working directory inside WSL (default `/var/tmp/linux-usb-build`). |
+| `-KeepWork` | Pass `--keep-work` to the bash builder. |
+| `-NonInteractive` | Pass `--non-interactive`. |
+| `-WslDistro <name>` | WSL distribution to use (default `Debian`). |
+| `-InstallWslIfMissing` | Auto-install WSL/distro (admin required). |
+| `-ServerUrl <url>` / `-AuthKey <key>` | Embed credentials into scripts on the USB. |
+
+> **Tip:** download the Debian Live ISO on the Windows side and pass it via `-DebianIso`. ISOs downloaded inside WSL bloat the WSL VHDX.
+
+---
+
+## Headless Debian Installer ISO
+
+`Build-Headless-Debian.sh` produces an *unattended* Debian netinst ISO. Booting that ISO performs a hands-off install of a minimal headless Debian box with `openssh-server` enabled and an injected SSH public key in `~/.ssh/authorized_keys`. There is no desktop environment, and password SSH login is disabled by default.
+
+This is **different** from the live-USB builder: that produces a *bootable diagnostic environment* (no install). The headless installer produces an artifact that *installs* a permanent system to the target machine's disk.
+
+### What it does
+
+1. Downloads the official Debian stable amd64 netinst ISO (or uses one you provide).
+2. Generates a `preseed.cfg` from your options (hostname, user, locale, mirror, packages, SSH key).
+3. Re-packs the netinst initrd to embed `preseed.cfg`.
+4. Adds an `auto=true priority=critical preseed/file=/preseed.cfg` boot entry to isolinux/grub and makes it the default.
+5. Recomputes `md5sum.txt` so the integrity check passes.
+6. Re-packs a hybrid (BIOS + UEFI) ISO.
+7. Optionally `dd`s the ISO to a USB device.
+8. Writes a sidecar `*.info.txt` with hostname/user/credentials/SHA256.
+
+### Build from Linux
+
+```bash
+# Install once
+curl -fsSL https://yourserver:3500/headless-debian-installer -H 'X-Auth-Key: KEY' | sudo bash
+
+# Build an ISO file (key-only SSH)
+sudo ~/HeadlessDebianBuilder/Build-Headless-Debian.sh \
+    --ssh-key ~/.ssh/id_ed25519.pub \
+    --output ~/phw-headless.iso
+
+# Build and write directly to a USB stick
+sudo ~/HeadlessDebianBuilder/Build-Headless-Debian.sh \
+    --ssh-key ~/.ssh/id_ed25519.pub \
+    --device /dev/sdb
+
+# Custom hostname/user/timezone/mirror/extras
+sudo ~/HeadlessDebianBuilder/Build-Headless-Debian.sh \
+    --ssh-key ~/.ssh/id_ed25519.pub \
+    --hostname tech-debian \
+    --username tech \
+    --timezone America/Denver \
+    --mirror ftp.us.debian.org \
+    --extra-packages "tmux htop git" \
+    --output ~/tech-debian.iso
+```
+
+### Build from Windows
+
+```powershell
+# Install once
+iwr https://yourserver:3500/headless-debian-installer-windows -Headers @{ 'X-Auth-Key' = 'KEY' } -UseBasicParsing | iex
+
+# Build an ISO file directly onto the Windows filesystem
+cd "$env:USERPROFILE\HeadlessDebianBuilder"
+.\Build-Headless-Debian.ps1 `
+    -SshKey "$env:USERPROFILE\.ssh\id_ed25519.pub" `
+    -Output C:\Temp\phw-headless.iso
+
+# Build and write directly to a USB stick (admin)
+.\Build-Headless-Debian.ps1 -ListUsb
+.\Build-Headless-Debian.ps1 -SshKey "$env:USERPROFILE\.ssh\id_ed25519.pub" -BusId 2-3
+```
+
+### Bash options (headless builder)
+
+| Option | Description |
+|--------|-------------|
+| `--ssh-key PATH` | SSH public key to authorize. **Required** unless `--allow-password`. |
+| `--allow-password` | Permit password SSH login. |
+| `--password PASS` | Set the user password (implies `--allow-password`). Random one is generated if omitted with `--allow-password`. |
+| `--root-password P` | Set root password (default: locked, no root login). |
+| `--hostname NAME` | Hostname (default `phw-debian`). |
+| `--username NAME` | Sudo user (default `phw`). |
+| `--timezone TZ` | e.g. `America/Denver` (default `Etc/UTC`). |
+| `--locale LOCALE` | e.g. `en_US.UTF-8`. |
+| `--keymap KEY` | e.g. `us`. |
+| `--mirror HOST` | Debian mirror host (default `deb.debian.org`). |
+| `--extra-packages "p1 p2"` | Extra packages to install. |
+| `--netinst-iso PATH` | Use an existing netinst ISO. |
+| `--netinst-url URL` | Download netinst ISO from this URL. |
+| `--output PATH` | Output ISO path (default `./headless-debian-<date>.iso`). |
+| `--device PATH` | USB device to write the ISO to (`dd`). |
+| `--skip-write` | ISO only; never write to a device. |
+| `--no-collector` | Don't embed PhoneHomeWeb collector pull in `late_command`. |
+| `--server-url URL` / `--auth-key KEY` | PhoneHomeWeb credentials for collector embed. |
+| `--work-dir PATH` | Working dir (default `/var/tmp/headless-debian-build`). |
+| `--keep-work` | Don't delete work dir. |
+| `--non-interactive` | No prompts. |
+
+### Resulting installed system
+
+- Hostname / user / timezone / mirror as specified.
+- Packages: `standard` task + `openssh-server sudo curl ca-certificates` (+ any `--extra-packages`).
+- SSH: `PasswordAuthentication no` by default (key only), `PermitRootLogin prohibit-password`.
+- Sudo: configured user has `NOPASSWD` (so SSH key login still leaves sudo working).
+- If server credentials were embedded, `/opt/phw/Linux-Collector.sh` and `/opt/phw/upload-file.sh` are pulled into the installed system.
+
+### Login
+
+```bash
+ssh phw@<host-or-ip>          # default user
+sudo -i                       # passwordless sudo
+```
+
+The credentials sidecar (`*.info.txt`) created next to the ISO contains the hostname, generated password (if any), and SHA256.
+
+### Cautions
+
+- `--device` writes the ISO with `dd`; **all data on the target USB is destroyed**.
+- The installed system will use whatever empty/wiped disk is detected (`/dev/sda`, `/dev/vda`, `/dev/nvme0n1`). Use a dedicated machine or VM. Do **not** boot this against a machine whose disk you want to keep.
+- Secure Boot is not signed; disable Secure Boot on UEFI targets or boot in CSM/Legacy.
+
+---
+
+
 
 ## USB layout
 

@@ -112,9 +112,24 @@ module.exports = function registerRoutes(app, deps) {
       file: "install-linux-usb-builder.sh",
     },
     {
+      route: "/linux-usb-installer-windows",
+      folder: "LinuxCollector",
+      file: "install-linux-usb-builder.ps1",
+    },
+    {
       route: "/linuxcollector-installer",
       folder: "LinuxCollector",
       file: "install-linuxcollector.sh",
+    },
+    {
+      route: "/headless-debian-installer",
+      folder: "LinuxCollector",
+      file: "install-headless-debian-builder.sh",
+    },
+    {
+      route: "/headless-debian-installer-windows",
+      folder: "LinuxCollector",
+      file: "install-headless-debian-builder.ps1",
     },
     {
       route: "/windowscollector",

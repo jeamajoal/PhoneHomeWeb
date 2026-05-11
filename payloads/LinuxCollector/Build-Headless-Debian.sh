@@ -141,14 +141,14 @@ fi
 SSH_KEY_CONTENT=""
 if [[ -n "$SSH_KEY_PATH" ]]; then
     [[ -f "$SSH_KEY_PATH" ]] || die "SSH key file not found: $SSH_KEY_PATH"
-    SSH_KEY_CONTENT="$(tr -d '\r' < "$SSH_KEY_PATH" | head -n 1)"
+    SSH_KEY_CONTENT="$(set +o pipefail; tr -d '\r' < "$SSH_KEY_PATH" | head -n 1)"
     if [[ ! "$SSH_KEY_CONTENT" =~ ^(ssh-(rsa|ed25519|ecdsa)|ecdsa-sha2-nistp[0-9]+)\  ]]; then
         die "File at $SSH_KEY_PATH does not look like an SSH public key."
     fi
 fi
 
 if [[ "$ALLOW_PASSWORD" -eq 1 && -z "$PASSWORD_VAL" ]]; then
-    PASSWORD_VAL="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20 || true)"
+    PASSWORD_VAL="$(set +o pipefail; tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
     log_warn "Generated random password for user '$USERNAME_VAL' (will be saved next to ISO)."
 fi
 
@@ -331,7 +331,9 @@ if [[ -n "$USER_PW_HASH" ]]; then
 else
     # No interactive password — installer requires *some* value, but late_command will
     # lock the password and rely on SSH keys. Set a long random one we discard.
-    RAND_PW="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+    # NOTE: 'head -c' closes its stdin early, causing SIGPIPE on 'tr' which under
+    # 'pipefail' would abort the script with exit 141. Disable pipefail locally.
+    RAND_PW="$(set +o pipefail; tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
     echo "d-i passwd/user-password-crypted password $(hash_password "$RAND_PW")" >> "$PRESEED"
     LATE_JOINED="in-target passwd -l $USERNAME_VAL ; $LATE_JOINED"
 fi

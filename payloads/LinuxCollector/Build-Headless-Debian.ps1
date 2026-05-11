@@ -199,8 +199,10 @@ function ConvertTo-WslPath {
 function Invoke-WslBash {
     param([string]$BashCommand)
     $cleanCmd = $BashCommand -replace "`r`n", "`n" -replace "`r", "`n"
-    & wsl.exe -d $WslDistro -u root -- bash -lc $cleanCmd
-    return $LASTEXITCODE
+    # Stream output to host so interactive prompts work and we don't capture
+    # bash output into our return value.
+    & wsl.exe -d $WslDistro -u root -- bash -lc $cleanCmd | Out-Host
+    return $global:LASTEXITCODE
 }
 
 function Test-UsbIpd { Test-CommandExists 'usbipd.exe' }

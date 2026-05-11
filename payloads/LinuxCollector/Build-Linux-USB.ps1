@@ -277,8 +277,11 @@ function Invoke-WslBash {
     $wslArgs = @('-d', $WslDistro)
     if ($AsRoot) { $wslArgs += @('-u', 'root') }
     $wslArgs += @('--', 'bash', '-lc', $cleanCmd)
-    & wsl.exe @wslArgs
-    return $LASTEXITCODE
+    # IMPORTANT: stream wsl.exe's stdout/stderr to the console (not into PowerShell's
+    # output stream) so interactive bash prompts work and the function does not
+    # accidentally return the bash output alongside the exit code.
+    & wsl.exe @wslArgs | Out-Host
+    return $global:LASTEXITCODE
 }
 
 # -----------------------------------------------------------------------------

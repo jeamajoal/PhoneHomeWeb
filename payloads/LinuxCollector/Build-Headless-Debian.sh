@@ -257,17 +257,20 @@ LATE_CMDS+=("in-target systemctl enable ssh")
 if [[ -n "$SSH_KEY_CONTENT" ]]; then
     SSH_KEY_B64="$(printf '%s\n' "$SSH_KEY_CONTENT" | base64 -w0)"
     LATE_CMDS+=("in-target install -d -m 0700 -o $USERNAME_VAL -g $USERNAME_VAL /home/$USERNAME_VAL/.ssh")
-    LATE_CMDS+=("in-target sh -c 'echo $SSH_KEY_B64 | base64 -d >> /home/$USERNAME_VAL/.ssh/authorized_keys'")
+    LATE_CMDS+=("in-target sh -c 'echo $SSH_KEY_B64 | base64 -d > /home/$USERNAME_VAL/.ssh/authorized_keys'")
     LATE_CMDS+=("in-target chmod 600 /home/$USERNAME_VAL/.ssh/authorized_keys")
     LATE_CMDS+=("in-target chown $USERNAME_VAL:$USERNAME_VAL /home/$USERNAME_VAL/.ssh/authorized_keys")
 fi
-# SSH daemon hardening
+# SSH daemon config — write a drop-in so it takes effect regardless of what
+# Debian's default sshd_config contains or includes (sed on main file is
+# unreliable on Debian 12/13 which use Include /etc/ssh/sshd_config.d/*.conf).
 if [[ "$ALLOW_PASSWORD" -eq 1 ]]; then
-    LATE_CMDS+=("in-target sh -c 'sed -i \"s/^#*PasswordAuthentication.*/PasswordAuthentication yes/\" /etc/ssh/sshd_config'")
+    PW_AUTH_LINE="PasswordAuthentication yes"
 else
-    LATE_CMDS+=("in-target sh -c 'sed -i \"s/^#*PasswordAuthentication.*/PasswordAuthentication no/\" /etc/ssh/sshd_config'")
+    PW_AUTH_LINE="PasswordAuthentication no"
 fi
-LATE_CMDS+=("in-target sh -c 'sed -i \"s/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/\" /etc/ssh/sshd_config'")
+SSHD_DROPIN_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$PW_AUTH_LINE" | base64 -w0)"
+LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d && echo $SSHD_DROPIN_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
 # Sudo NOPASSWD for the user (key-only login otherwise leaves sudo unusable)
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
 

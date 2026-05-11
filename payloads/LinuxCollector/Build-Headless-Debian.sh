@@ -86,11 +86,11 @@ DEFAULT_NETINST_URL="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; GRAY='\033[0;90m'; NC='\033[0m'
 
-log_info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
-log_ok()      { echo -e "${GREEN}[OK]${NC} $*"; }
-log_warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_info()    { echo -e "${BLUE}[INFO]${NC} $*" >&2; }
+log_ok()      { echo -e "${GREEN}[OK]${NC} $*" >&2; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-log_detail()  { echo -e "  ${GRAY}$*${NC}"; }
+log_detail()  { echo -e "  ${GRAY}$*${NC}" >&2; }
 die()         { log_error "$*"; exit 1; }
 
 usage() { sed -n '2,/^# ===/p' "$0" | sed 's/^# \{0,1\}//'; }

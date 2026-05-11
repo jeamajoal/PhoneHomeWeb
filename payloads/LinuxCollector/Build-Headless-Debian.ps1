@@ -198,7 +198,8 @@ function ConvertTo-WslPath {
 
 function Invoke-WslBash {
     param([string]$BashCommand)
-    & wsl.exe -d $WslDistro -u root -- bash -lc $BashCommand
+    $cleanCmd = $BashCommand -replace "`r`n", "`n" -replace "`r", "`n"
+    & wsl.exe -d $WslDistro -u root -- bash -lc $cleanCmd
     return $LASTEXITCODE
 }
 
@@ -211,7 +212,8 @@ function Mount-UsbToWsl {
     if (-not (Test-UsbIpd)) { Show-UsbHint; Stop-Hard "usbipd-win required (or pass -SkipUsbAttach)." }
     if (-not (Test-IsAdmin)) { Stop-Hard "usbipd bind/attach requires Administrator." }
     & usbipd.exe bind --busid $BusId 2>$null
-    & usbipd.exe attach --wsl --busid $BusId --distribution $WslDistro
+    # usbipd-win >= 4: --wsl takes the distro name as its value
+    & usbipd.exe attach --wsl $WslDistro --busid $BusId
     if ($LASTEXITCODE -ne 0) { Stop-Hard "usbipd attach failed (exit $LASTEXITCODE)." }
     Write-Ok "USB $BusId attached to '$WslDistro'."
 }

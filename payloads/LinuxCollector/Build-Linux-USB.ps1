@@ -215,7 +215,8 @@ function Mount-UsbToWsl {
     Write-Info "Binding USB bus $BusId via usbipd..."
     & usbipd.exe bind --busid $BusId 2>$null  # idempotent; ignore "already bound"
     Write-Info "Attaching USB bus $BusId to WSL distro '$Distro'..."
-    & usbipd.exe attach --wsl --busid $BusId --distribution $Distro
+    # usbipd-win >= 4: --wsl takes the distro name as its value (no separate --distribution flag)
+    & usbipd.exe attach --wsl $Distro --busid $BusId
     if ($LASTEXITCODE -ne 0) {
         Stop-Hard "usbipd attach failed (exit $LASTEXITCODE). Verify the bus ID with: usbipd list"
     }
@@ -271,9 +272,11 @@ function ConvertTo-WslPath {
 
 function Invoke-WslBash {
     param([string]$BashCommand, [switch]$AsRoot)
+    # Strip Windows CRLF so bash doesn't choke on stray \r at end of lines.
+    $cleanCmd = $BashCommand -replace "`r`n", "`n" -replace "`r", "`n"
     $wslArgs = @('-d', $WslDistro)
     if ($AsRoot) { $wslArgs += @('-u', 'root') }
-    $wslArgs += @('--', 'bash', '-lc', $BashCommand)
+    $wslArgs += @('--', 'bash', '-lc', $cleanCmd)
     & wsl.exe @wslArgs
     return $LASTEXITCODE
 }

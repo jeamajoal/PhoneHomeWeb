@@ -170,9 +170,30 @@ function ConvertTo-WslPath {
     if ($p.StartsWith('/')) { return $p }
     $resolved = Resolve-Path -LiteralPath $p -ErrorAction SilentlyContinue
     $candidate = if ($resolved) { $resolved.Path } else { $p }
-    $out = & wsl.exe -d $WslDistro -- wslpath -a "$candidate" 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $out) { Stop-Hard "wslpath failed for: $p" }
-    return ($out -join '').Trim()
+
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    try {
+        $out = & wsl.exe -d $WslDistro -e wslpath -a "$candidate" 2>$tmpErr
+        $code = $LASTEXITCODE
+        $errText = (Get-Content -LiteralPath $tmpErr -Raw -ErrorAction SilentlyContinue)
+        if ($code -eq 0 -and $out) {
+            $clean = (($out -join '').Trim() -replace "`0", '')
+            if ($clean) { return $clean }
+        }
+        Write-Warn2 "wslpath failed (exit=$code). stderr: $errText"
+    } finally {
+        Remove-Item -LiteralPath $tmpErr -ErrorAction SilentlyContinue
+    }
+
+    if ($candidate -match '^([A-Za-z]):[\\/](.*)$') {
+        $drive = $Matches[1].ToLowerInvariant()
+        $rest  = $Matches[2] -replace '\\', '/'
+        $mapped = "/mnt/$drive/$rest"
+        Write-Info "Falling back to manual path translation: $mapped"
+        return $mapped
+    }
+
+    Stop-Hard "wslpath failed for: $p"
 }
 
 function Invoke-WslBash {

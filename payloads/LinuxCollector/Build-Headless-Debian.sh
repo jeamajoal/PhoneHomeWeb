@@ -241,7 +241,6 @@ PACKAGES_FINAL="$PACKAGES_BASE"
 
 # Build late_command — runs after install in chroot of the new system.
 LATE_CMDS=()
-LATE_CMDS+=("in-target systemctl enable ssh")
 # SSH key injection
 if [[ -n "$SSH_KEY_CONTENT" ]]; then
     SSH_KEY_B64="$(printf '%s\n' "$SSH_KEY_CONTENT" | base64 -w0)"
@@ -249,6 +248,8 @@ if [[ -n "$SSH_KEY_CONTENT" ]]; then
     LATE_CMDS+=("in-target sh -c 'echo $SSH_KEY_B64 | base64 -d > /home/$USERNAME_VAL/.ssh/authorized_keys'")
     LATE_CMDS+=("in-target chmod 600 /home/$USERNAME_VAL/.ssh/authorized_keys")
     LATE_CMDS+=("in-target chown $USERNAME_VAL:$USERNAME_VAL /home/$USERNAME_VAL/.ssh/authorized_keys")
+    # Fail install if authorized_keys did not get written.
+    LATE_CMDS+=("in-target sh -c 'test -s /home/$USERNAME_VAL/.ssh/authorized_keys'")
 fi
 # SSH daemon config — write a drop-in so it takes effect regardless of what
 # Debian's default sshd_config contains or includes (sed on main file is
@@ -258,8 +259,50 @@ if [[ "$ALLOW_PASSWORD" -eq 1 ]]; then
 else
     PW_AUTH_LINE="PasswordAuthentication no"
 fi
+LATE_CMDS+=("in-target sh -c 'grep -qF \"Include /etc/ssh/sshd_config.d/*.conf\" /etc/ssh/sshd_config || echo \"Include /etc/ssh/sshd_config.d/*.conf\" >> /etc/ssh/sshd_config'")
 SSHD_DROPIN_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$PW_AUTH_LINE" | base64 -w0)"
 LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d && echo $SSHD_DROPIN_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
+# Make the created user a passwordless sudoer for admin bootstrap.
+LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
+# Enabling ssh can fail in some installer chroot contexts; keep it best-effort.
+LATE_CMDS+=("in-target sh -c 'systemctl enable ssh >/dev/null 2>&1 || true'")
+
+# /etc/issue dynamic updater — show hostname, current IP, and boot time on TTY login.
+UPDATE_ISSUE_B64="$(base64 -w0 <<'_SCRIPT_'
+#!/bin/sh
+BOOT="$(uptime -s 2>/dev/null || echo unknown)"
+IPS="$(hostname -I 2>/dev/null | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')"
+cat > /etc/issue <<ISSUE
+
+Debian GNU/Linux \n \l
+
+    Hostname : $(hostname)
+    IP Addr  : ${IPS:-not assigned yet}
+    Last Boot: ${BOOT}
+
+ISSUE
+_SCRIPT_
+)"
+
+UPDATE_ISSUE_SVC_B64="$(base64 -w0 <<'_SVC_'
+[Unit]
+Description=Update /etc/issue with host/IP/boot metrics
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-issue
+
+[Install]
+WantedBy=multi-user.target
+_SVC_
+)"
+
+LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_B64 | base64 -d > /usr/local/sbin/update-issue && chmod +x /usr/local/sbin/update-issue || true'")
+LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_SVC_B64 | base64 -d > /etc/systemd/system/update-issue.service || true'")
+LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/systemd/system/multi-user.target.wants && ln -sf /etc/systemd/system/update-issue.service /etc/systemd/system/multi-user.target.wants/update-issue.service || true'")
+LATE_CMDS+=("in-target sh -c '/usr/local/sbin/update-issue || true'")
 
 # Join late_commands with AND so any failure aborts preseed cleanly.
 LATE_JOINED=""
@@ -342,37 +385,6 @@ d-i partman-auto/method string regular
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-md/device_remove_md boolean true
 d-i partman-basicfilesystems/no_swap boolean false
-
-### Explicit recipe with ESP so UEFI installs succeed (EFI installer needs
-### a 538MB+ vfat ESP flagged 'esp'). On legacy BIOS the ESP is harmless.
-d-i partman-auto/expert_recipe string                         \
-    phw-headless ::                                           \
-        538 538 1075 free                                     \
-            \$iflabel{ gpt }                                  \
-            \$reusemethod{ }                                  \
-            method{ efi }                                     \
-            format{ }                                         \
-        .                                                     \
-        1024 4096 200% linux-swap                             \
-            method{ swap }                                    \
-            format{ }                                         \
-        .                                                     \
-        2048 10000 -1 ext4                                    \
-            method{ format }                                  \
-            format{ }                                         \
-            use_filesystem{ }                                  \
-            filesystem{ ext4 }                                 \
-            mountpoint{ / }                                    \
-        .
-
-d-i partman-auto/choose_recipe select phw-headless
-d-i partman-partitioning/confirm_write_new_label boolean true
-d-i partman/choose_partition select finish
-d-i partman/confirm boolean true
-d-i partman/confirm_nooverwrite boolean true
-d-i partman-efi/non_efi_system boolean true
-d-i partman-partitioning/choose_label string gpt
-d-i partman-partitioning/default_label string gpt
 
 ### Explicit recipe with ESP so UEFI installs succeed (EFI installer needs
 ### a 538MB+ vfat ESP flagged 'esp'). On legacy BIOS the ESP is harmless.

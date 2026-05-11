@@ -333,12 +333,15 @@ cd "$env:USERPROFILE\HeadlessDebianBuilder"
 - Hostname / user / timezone / mirror as specified.
 - Packages: `standard` task + `openssh-server sudo curl ca-certificates` (+ any `--extra-packages`).
 - SSH: `PasswordAuthentication no` by default (key only), `PermitRootLogin prohibit-password`.
-- `late_command` is intentionally limited to SSH bootstrap only: service enable, `authorized_keys` injection, permissions/ownership, and sshd policy drop-in.
+- Created user is configured as a `NOPASSWD` sudoer for bootstrap/admin tasks.
+- `/etc/issue` is updated at boot with hostname, current IP address, and last boot time for quick DHCP-network discovery from the local login screen.
+- `late_command` prioritizes SSH bootstrap (`authorized_keys` injection, permissions/ownership, and sshd policy drop-in) and then applies local post-install hardening/customization.
 
 ### Login
 
 ```bash
 ssh phw@<host-or-ip>          # default user
+sudo -i                       # passwordless sudo
 ```
 
 The credentials sidecar (`*.info.txt`) created next to the ISO contains the hostname, generated password (if any), and SHA256.

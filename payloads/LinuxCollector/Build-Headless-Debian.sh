@@ -327,6 +327,12 @@ LATE_CMDS+=("in-target sh -c 'echo $UPDATE_ISSUE_SVC_B64 | base64 -d > /etc/syst
 LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/systemd/system/multi-user.target.wants && ln -sf /etc/systemd/system/update-issue.service /etc/systemd/system/multi-user.target.wants/update-issue.service || true'")
 LATE_CMDS+=("in-target sh -c '/usr/local/sbin/update-issue || true'")
 
+# Install common Kali tools for Kerberos/DNS/fallback protocol testing.
+KALI_TEST_TOOL_PACKAGES="krb5-user kerbrute python3-impacket ldap-utils dnsutils ldnsutils dnsrecon dnsenum amass massdns responder mitm6 nbtscan nmap hping3 python3-scapy tcpdump tshark netcat-openbsd socat testssl.sh smbclient"
+# Keep this as the final late_command and best-effort so earlier provisioning
+# (SSH key, sshd policy, sudoers, login metrics) is never blocked by package issues.
+LATE_CMDS+=("in-target sh -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $KALI_TEST_TOOL_PACKAGES || true'")
+
 # Join late_commands with AND so any failure aborts preseed cleanly.
 LATE_JOINED=""
 for c in "${LATE_CMDS[@]}"; do

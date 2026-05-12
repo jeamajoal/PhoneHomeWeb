@@ -270,11 +270,16 @@ AuthenticationMethods publickey
 EOF
 )"
 fi
+# Setup SSHD config in a drop-in file so it applies regardless of the base sshd_config content.
 SSHD_POLICY_B64="$(printf 'PubkeyAuthentication yes\n%s\nPermitRootLogin prohibit-password\nAuthorizedKeysFile .ssh/authorized_keys\n' "$SSH_AUTH_BLOCK" | base64 -w0)"
+LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/'")
+LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d'")
 LATE_CMDS+=("in-target sh -c 'test -f /etc/ssh/sshd_config || touch /etc/ssh/sshd_config'")
 LATE_CMDS+=("in-target sh -c 'grep -qF \"Include /etc/ssh/sshd_config.d/*.conf\" /etc/ssh/sshd_config || echo \"Include /etc/ssh/sshd_config.d/*.conf\" >> /etc/ssh/sshd_config'")
-LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/ssh/sshd_config.d && echo $SSHD_POLICY_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
-# Also prepend the same policy directly to the main config as a fallback.
+LATE_CMDS+=("in-target sh -c 'echo $SSHD_POLICY_B64 | base64 -d > /etc/ssh/sshd_config.d/99-phw.conf && chmod 600 /etc/ssh/sshd_config.d/99-phw.conf'")
+# Ensure drop-in was written, and also prepend the same policy to main config
+# as a fallback in case drop-ins are ignored or removed later.
+LATE_CMDS+=("in-target sh -c 'test -s /etc/ssh/sshd_config.d/99-phw.conf'")
 LATE_CMDS+=("in-target sh -c 'echo $SSHD_POLICY_B64 | base64 -d > /etc/ssh/sshd_config.phw && cat /etc/ssh/sshd_config.phw /etc/ssh/sshd_config > /etc/ssh/sshd_config.new && mv /etc/ssh/sshd_config.new /etc/ssh/sshd_config && rm -f /etc/ssh/sshd_config.phw'")
 # Make the created user a passwordless sudoer for admin bootstrap.
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
@@ -285,7 +290,7 @@ LATE_CMDS+=("in-target sh -c 'systemctl enable ssh >/dev/null 2>&1 || true'")
 UPDATE_ISSUE_B64="$(base64 -w0 <<'_SCRIPT_'
 #!/bin/sh
 BOOT="$(uptime -s 2>/dev/null || echo unknown)"
-IPS="$(hostname -I 2>/dev/null | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')"
+IPS="$(hostname -I 2>/dev/null)"
 cat > /etc/issue <<ISSUE
 
 Debian GNU/Linux \n \l

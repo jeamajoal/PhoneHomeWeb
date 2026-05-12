@@ -256,6 +256,7 @@ fi
 # unreliable on Debian 12/13 which use Include /etc/ssh/sshd_config.d/*.conf).
 if [[ "$ALLOW_PASSWORD" -eq 1 ]]; then
     SSH_AUTH_BLOCK="$(cat <<'EOF'
+PubkeyAuthentication yes
 PasswordAuthentication yes
 KbdInteractiveAuthentication yes
 ChallengeResponseAuthentication yes
@@ -263,6 +264,7 @@ EOF
 )"
 else
     SSH_AUTH_BLOCK="$(cat <<'EOF'
+PubkeyAuthentication yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 ChallengeResponseAuthentication no
@@ -283,10 +285,11 @@ LATE_CMDS+=("in-target sh -c 'test -s /etc/ssh/sshd_config.d/99-phw.conf'")
 LATE_CMDS+=("in-target sh -c 'echo $SSHD_POLICY_B64 | base64 -d > /etc/ssh/sshd_config.phw && cat /etc/ssh/sshd_config.phw /etc/ssh/sshd_config > /etc/ssh/sshd_config.new && mv /etc/ssh/sshd_config.new /etc/ssh/sshd_config && rm -f /etc/ssh/sshd_config.phw'")
 # Make the created user a passwordless sudoer for admin bootstrap.
 LATE_CMDS+=("in-target sh -c 'echo \"$USERNAME_VAL ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/90-$USERNAME_VAL && chmod 440 /etc/sudoers.d/90-$USERNAME_VAL'")
-# Add Kali repository and refresh package indexes.
-LATE_CMDS+=("in-target sh -c 'echo \"deb http://http.kali.org/kali kali-rolling main non-free contrib\" > /etc/apt/sources.list.d/kali.list'")
-LATE_CMDS+=("in-target sh -c 'wget -qO - https://archive.kali.org/archive-key.asc | apt-key add -'")
-LATE_CMDS+=("in-target apt-get update")
+# Add Kali repository and refresh package indexes as best-effort so network
+# or repo issues never block core provisioning.
+LATE_CMDS+=("in-target sh -c 'echo \"deb http://http.kali.org/kali kali-rolling main non-free contrib\" > /etc/apt/sources.list.d/kali.list || true'")
+LATE_CMDS+=("in-target sh -c 'wget -qO - https://archive.kali.org/archive-key.asc | apt-key add - || true'")
+LATE_CMDS+=("in-target sh -c 'apt-get update || true'")
 # Enabling ssh can fail in some installer chroot contexts; keep it best-effort.
 LATE_CMDS+=("in-target sh -c 'systemctl enable ssh >/dev/null 2>&1 || true'")
 

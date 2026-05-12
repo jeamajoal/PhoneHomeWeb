@@ -293,17 +293,40 @@ LATE_CMDS+=("in-target sh -c 'apt-get update || true'")
 # Enabling ssh can fail in some installer chroot contexts; keep it best-effort.
 LATE_CMDS+=("in-target sh -c 'systemctl enable ssh >/dev/null 2>&1 || true'")
 
-# /etc/issue dynamic updater — show hostname, current IP, and boot time on TTY login.
+# /etc/issue dynamic updater — show hostname, IP, MAC, and boot time on TTY login.
 UPDATE_ISSUE_B64="$(base64 -w0 <<'_SCRIPT_'
 #!/bin/sh
 BOOT="$(uptime -s 2>/dev/null || echo unknown)"
-IPS="$(hostname -I 2>/dev/null)"
+
+# Wait briefly for a global IPv4 to appear so first-login banner is useful.
+IP_ADDR=""
+i=0
+while [ "$i" -lt 20 ]; do
+    IP_ADDR="$(ip -4 -o addr show scope global up 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+    [ -n "$IP_ADDR" ] && break
+    i=$((i + 1))
+    sleep 1
+done
+[ -n "$IP_ADDR" ] || IP_ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[ -n "$IP_ADDR" ] || IP_ADDR="not assigned yet"
+
+IFACE="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)"
+if [ -z "$IFACE" ]; then
+    IFACE="$(ip -o link show 2>/dev/null | awk -F': ' '$2 != "lo" {print $2; exit}')"
+fi
+MAC_ADDR=""
+if [ -n "$IFACE" ]; then
+    MAC_ADDR="$(ip link show "$IFACE" 2>/dev/null | awk '/link\/ether/ {print $2; exit}')"
+fi
+[ -n "$MAC_ADDR" ] || MAC_ADDR="unknown"
+
 cat > /etc/issue <<ISSUE
 
 Debian GNU/Linux \n \l
 
     Hostname : $(hostname)
-    IP Addr  : ${IPS:-not assigned yet}
+    IP Addr  : ${IP_ADDR}
+    MAC Addr : ${MAC_ADDR}${IFACE:+ (${IFACE})}
     Last Boot: ${BOOT}
 
 ISSUE
@@ -312,7 +335,7 @@ _SCRIPT_
 
 UPDATE_ISSUE_SVC_B64="$(base64 -w0 <<'_SVC_'
 [Unit]
-Description=Update /etc/issue with host/IP/boot metrics
+Description=Update /etc/issue with host/IP/MAC/boot metrics
 After=network-online.target
 Wants=network-online.target
 
@@ -331,7 +354,7 @@ LATE_CMDS+=("in-target sh -c 'mkdir -p /etc/systemd/system/multi-user.target.wan
 LATE_CMDS+=("in-target sh -c '/usr/local/sbin/update-issue || true'")
 
 # Install common Kali tools for Kerberos/DNS/fallback protocol testing.
-KALI_TEST_TOOL_PACKAGES="krb5-user kerbrute python3-impacket ldap-utils dnsutils ldnsutils dnsrecon dnsenum amass massdns responder mitm6 nbtscan nmap hping3 python3-scapy tcpdump tshark netcat-openbsd socat testssl.sh smbclient"
+KALI_TEST_TOOL_PACKAGES="krb5-user python3-impacket ldap-utils dnsutils ldnsutils dnsrecon dnsenum nbtscan nmap hping3 python3-scapy tcpdump tshark netcat-openbsd socat testssl.sh smbclient"
 # Keep this as the final late_command and best-effort so earlier provisioning
 # (SSH key, sshd policy, sudoers, login metrics) is never blocked by package issues.
 LATE_CMDS+=("in-target sh -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $KALI_TEST_TOOL_PACKAGES || true'")

@@ -627,16 +627,6 @@ try {
         "WinPE-WinReCfg.cab",
         "en-us\WinPE-WinReCfg_en-us.cab",
 
-        # Windows setup support
-        "WinPE-Setup.cab",
-        "en-us\WinPE-Setup_en-us.cab",
-        "WinPE-Setup-Client.cab",
-        "en-us\WinPE-Setup-Client_en-us.cab",
-        "WinPE-Setup-Server.cab",
-        "en-us\WinPE-Setup-Server_en-us.cab",
-        "WinPE-LegacySetup.cab",
-        "en-us\WinPE-LegacySetup_en-us.cab",
-        
         # Windows Data Storage Management (for better disk tools)
         "WinPE-WDS-Tools.cab",
         "en-us\WinPE-WDS-Tools_en-us.cab",

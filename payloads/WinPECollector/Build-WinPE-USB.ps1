@@ -565,8 +565,8 @@ try {
     
     Write-Status "WinPE image mounted" "Green"
     
-    # Add PowerShell support
-    Write-Status "Adding PowerShell support..." "Cyan"
+    # Add core WinPE optional components in dependency order
+    Write-Status "Adding core WinPE optional components..." "Cyan"
     
     $packagesPath = "$ADKPath\Windows Preinstallation Environment\amd64\WinPE_OCs"
     
@@ -583,7 +583,12 @@ try {
         "en-us\WinPE-StorageWMI_en-us.cab",
         "WinPE-DismCmdlets.cab",
         "en-us\WinPE-DismCmdlets_en-us.cab",
+        "WinPE-SecureStartup.cab",
+        "en-us\WinPE-SecureStartup_en-us.cab",
+        "WinPE-PlatformID.cab",
+        "en-us\WinPE-PlatformID_en-us.cab",
         "WinPE-SecureBootCmdlets.cab",
+        "en-us\WinPE-SecureBootCmdlets_en-us.cab",
         "WinPE-EnhancedStorage.cab",
         "en-us\WinPE-EnhancedStorage_en-us.cab"
     )
@@ -596,14 +601,19 @@ try {
         }
     }
     
-    Write-Status "PowerShell support added" "Green"
+    Write-Status "Core WinPE optional components added" "Green"
     
     # Add additional diagnostic and troubleshooting tools
     Write-Status "Adding diagnostic and troubleshooting tools..." "Cyan"
     
     $diagnosticPackages = @(
-        # BitLocker support (manage-bde)
+        # Database access support (ODBC, OLE DB, and ADO)
+        "WinPE-MDAC.cab",
+        "en-us\WinPE-MDAC_en-us.cab",
+
+        # File Management API support for deleted file discovery/recovery
         "WinPE-FMAPI.cab",
+        "en-us\WinPE-FMAPI_en-us.cab",
         
         # HTML rendering (for better PowerShell reports)
         "WinPE-HTA.cab",
@@ -616,24 +626,41 @@ try {
         # Windows Recovery Environment tools
         "WinPE-WinReCfg.cab",
         "en-us\WinPE-WinReCfg_en-us.cab",
+
+        # Windows setup support
+        "WinPE-Setup.cab",
+        "en-us\WinPE-Setup_en-us.cab",
+        "WinPE-Setup-Client.cab",
+        "en-us\WinPE-Setup-Client_en-us.cab",
+        "WinPE-Setup-Server.cab",
+        "en-us\WinPE-Setup-Server_en-us.cab",
+        "WinPE-LegacySetup.cab",
+        "en-us\WinPE-LegacySetup_en-us.cab",
         
         # Windows Data Storage Management (for better disk tools)
         "WinPE-WDS-Tools.cab",
         "en-us\WinPE-WDS-Tools_en-us.cab",
         
-        # Secure startup (TPM tools)
-        "WinPE-SecureStartup.cab",
-        "en-us\WinPE-SecureStartup_en-us.cab",
-        
         # Windows PE PPPoE support (for certain network scenarios)
         "WinPE-PPPoE.cab",
         "en-us\WinPE-PPPoE_en-us.cab",
+
+        # USB network adapter and tethering-style network support
+        "WinPE-RNDIS.cab",
+        "en-us\WinPE-RNDIS_en-us.cab",
         
         # Network diagnostic tools
         "WinPE-Dot3Svc.cab",
         "en-us\WinPE-Dot3Svc_en-us.cab",
+
+        # Hardware support available in newer ADK releases
+        "WinPE-GamingPeripherals.cab",
+        "en-us\WinPE-GamingPeripherals_en-us.cab",
+        "WinPE-HSP-Driver.cab",
+        "en-us\WinPE-HSP-Driver_en-us.cab",
         
         # Font support for better console display
+        "WinPE-Fonts-Legacy.cab",
         "WinPE-FontSupport-JA-JP.cab",
         "WinPE-FontSupport-KO-KR.cab",
         "WinPE-FontSupport-ZH-CN.cab",
@@ -651,7 +678,7 @@ try {
         }
     }
     
-    Write-Status "Added $toolCount diagnostic tools (includes BitLocker/manage-bde, DISM, Recovery tools)" "Green"
+    Write-Status "Added $toolCount optional tools (includes database, setup, networking, recovery, and font support)" "Green"
     
     # Stage collector script
     $collectorDir = "$mountDir\WinPECollector"

@@ -1,0 +1,17 @@
+npm-debug.log
+.git
+.github
+.gitignore
+.gitattributes
+uploads
+logs
+data
+*.md
+!README.md
+.env
+.env.local
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

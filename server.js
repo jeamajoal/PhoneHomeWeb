@@ -6,6 +6,7 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const http = require("http");
 const crypto = require("crypto");
 
 // Load environment variables from .env (if present)
@@ -61,52 +62,58 @@ process.on("SIGTERM", () => {
 const PORT = envInt("PORT", 3500);
 const BIND_HOST = envStr("BIND_HOST", "0.0.0.0");
 
+// Separate non-SSL HTTP listener used only for DCV validation files.
+// Set DCV_HTTP_PORT=80 if Node is allowed to bind port 80, otherwise use
+// a higher port and forward/proxy port 80 to it.
+const DCV_HTTP_PORT = envInt("DCV_HTTP_PORT", 80);
+const DCV_HTTP_BIND_HOST = envStr("DCV_HTTP_BIND_HOST", BIND_HOST);
+
 // Security: Path traversal and filename injection prevention
 function sanitizePath(userInput) {
-  if (!userInput || typeof userInput !== 'string') {
-    throw new Error('Invalid path input');
+  if (!userInput || typeof userInput !== "string") {
+    throw new Error("Invalid path input");
   }
-  
+
   // Normalize and strip any path traversal sequences (limit iterations to prevent abuse)
   let sanitizeIter = 0;
-  while (userInput.includes('..') || path.isAbsolute(userInput)) {
+  while (userInput.includes("..") || path.isAbsolute(userInput)) {
     if (++sanitizeIter > 5) {
-      throw new Error('Path traversal attempt detected');
+      throw new Error("Path traversal attempt detected");
     }
-    userInput = path.normalize(userInput).replace(/^(\.\.[\/\\])+/, '');
-    
+    userInput = path.normalize(userInput).replace(/^(\.\.[/\\])+/, "");
+
     // Reject if still contains path traversal or is absolute
-    if (userInput.includes('..') || path.isAbsolute(userInput)) {
-      throw new Error('Path traversal attempt detected');
+    if (userInput.includes("..") || path.isAbsolute(userInput)) {
+      throw new Error("Path traversal attempt detected");
     }
   }
-  
+
   // Reject path separators at start (extra protection)
-  if (userInput.startsWith('/') || userInput.startsWith('\\')) {
-    throw new Error('Invalid path format');
+  if (userInput.startsWith("/") || userInput.startsWith("\\")) {
+    throw new Error("Invalid path format");
   }
-  
+
   return userInput;
 }
 
 function sanitizeFilename(filename) {
-  if (!filename || typeof filename !== 'string') {
-    throw new Error('Invalid filename');
+  if (!filename || typeof filename !== "string") {
+    throw new Error("Invalid filename");
   }
-  
+
   // Remove path separators, control characters, and dangerous characters
-  filename = filename.replace(/[\/\\:*?"<>|\r\n\x00-\x1f\x7f]/g, '_');
+  filename = filename.replace(/[\/\\:*?"<>|\r\n\x00-\x1f\x7f]/g, "_");
 
   // Ensure it's not empty after sanitization
-  if (!filename || filename.trim() === '') {
-    throw new Error('Invalid filename after sanitization');
+  if (!filename || filename.trim() === "") {
+    throw new Error("Invalid filename after sanitization");
   }
-  
+
   // Reject files that are just dots
   if (/^\.+$/.test(filename)) {
-    throw new Error('Invalid filename');
+    throw new Error("Invalid filename");
   }
-  
+
   return filename;
 }
 
@@ -127,7 +134,7 @@ console.log(`AUTH_KEY loaded (length: ${STATIC_KEY.length})`);
 if (HT_STATIC_KEY) {
   console.log(`AUTH_KEY_HIGH_TRUST loaded (length: ${HT_STATIC_KEY.length})`);
 } else {
-  console.log(`AUTH_KEY_HIGH_TRUST not configured (high-trust endpoints disabled)`);
+  console.log("AUTH_KEY_HIGH_TRUST not configured (high-trust endpoints disabled)");
 }
 
 // Timing-safe key comparison to prevent timing attacks.
@@ -199,6 +206,11 @@ if (!fs.existsSync(payloadsDir)) {
   fs.mkdirSync(payloadsDir, { recursive: true });
 }
 
+const publicUnknownDir = path.resolve(__dirname, "pub", "unknown");
+if (!fs.existsSync(publicUnknownDir)) {
+  fs.mkdirSync(publicUnknownDir, { recursive: true });
+}
+
 // Configure multer for file storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -208,14 +220,14 @@ const storage = multer.diskStorage({
     try {
       // Sanitize the original filename to prevent path traversal
       const sanitized = sanitizeFilename(file.originalname);
-      
+
       // Add timestamp to prevent naming conflicts
       const timestamp = Date.now();
       const ext = path.extname(sanitized);
       const name = path.basename(sanitized, ext);
       cb(null, `${name}-${timestamp}${ext}`);
     } catch (error) {
-      console.error('Filename sanitization error:', error.message);
+      console.error("Filename sanitization error:", error.message);
       // Fallback to safe default name
       cb(null, `upload-${Date.now()}.bin`);
     }
@@ -301,61 +313,157 @@ if (envBool("ENABLE_HEALTH_ENDPOINT", false)) {
   });
 }
 
-// Static key validation middleware - appears unresponsive without key
-app.use((req, res, next) => {
-  // Allow unauthenticated validation path(s) for CA DCV files.
-  // DCV_VALIDATION_PATH must be an absolute URL path (folder) such as
+function isPathInside(childPath, parentPath) {
+  const relative = path.relative(parentPath, childPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function serveDcvValidationFile(req, res, options = {}) {
+  const silentNotFound = options.silentNotFound ?? true;
+
+  // DCV_VALIDATION_PATH must be an absolute URL path/folder such as:
   //   /.well-known/pki-validation/                 (Sectigo HTTP DCV)
   //   /.well-known/acme-challenge/                 (Let's Encrypt)
-  // Files matching that prefix will be served from <project>/<dcvPath>.
-  const dcvPath = envStr(
-    "DCV_VALIDATION_PATH",
-    ""
-  );
+  // Files matching that prefix are served from <project>/<dcvPath>.
+  const dcvPath = envStr("DCV_VALIDATION_PATH", "");
 
-  // Skip key validation for DCV SSL certificate validation.
-  // Check if the request URL starts with the DCV folder path.
-  if (dcvPath) {
-    // Extract pathname only (strip query params to prevent bypass)
-    const requestPath = new URL(req.url, 'http://localhost').pathname;
-    
-    // Ensure dcvPath ends with / for proper prefix matching
-    const dcvFolder = dcvPath.endsWith('/') ? dcvPath : dcvPath + '/';
-    
-    if (requestPath.startsWith(dcvFolder)) {
-      // Resolve the file relative to the project root; reject traversal.
-      const dcvDiskPath = path.resolve(__dirname, requestPath.replace(/^\/+/, ""));
-      const projectRoot = path.resolve(__dirname);
-      const dcvDiskFolder = path.resolve(__dirname, dcvFolder.replace(/^\/+/, ""));
-      
-      // Check both project root and DCV folder boundaries
-      if (!dcvDiskPath.startsWith(projectRoot + path.sep) || 
-          !dcvDiskPath.startsWith(dcvDiskFolder)) {
-        console.log(`[X] DCV: Path traversal blocked for ${requestPath}`);
-        console.log("=".repeat(80) + "\n");
-        return; // silent drop
-      }
-      if (!fs.existsSync(dcvDiskPath)) {
-        console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
-        console.log("=".repeat(80) + "\n");
-        return; // silent drop
-      }
-      // Additional check: ensure it's a file, not a directory
-      if (!fs.statSync(dcvDiskPath).isFile()) {
-        console.log(`[X] DCV: Path is not a file: ${dcvDiskPath}`);
-        console.log("=".repeat(80) + "\n");
-        return; // silent drop
-      }
-      console.log(`[OK] DCV: Serving validation file ${dcvDiskPath}`);
-      console.log("=".repeat(80) + "\n");
-      res.sendFile(dcvDiskPath);
-      return; // Don't call next() - response already sent
-    }
+  if (!dcvPath) {
+    return false;
   }
 
-  // Check for static key in query parameter or headers
+  if (!dcvPath.startsWith("/")) {
+    console.log("[X] DCV: DCV_VALIDATION_PATH must start with /");
+    if (!silentNotFound) res.status(500).end();
+    return true;
+  }
+
+  // Extract pathname only; strips query params to prevent bypass tricks.
+  const requestPath = new URL(req.url, "http://localhost").pathname;
+
+  // Ensure dcvPath ends with / for proper prefix matching.
+  const dcvFolder = dcvPath.endsWith("/") ? dcvPath : dcvPath + "/";
+
+  if (!requestPath.startsWith(dcvFolder)) {
+    return false;
+  }
+
+  const projectRoot = path.resolve(__dirname);
+  const dcvDiskFolder = path.resolve(projectRoot, dcvFolder.replace(/^\/+/, ""));
+  const dcvDiskPath = path.resolve(projectRoot, requestPath.replace(/^\/+/, ""));
+
+  // Check both project root and DCV folder boundaries.
+  if (!isPathInside(dcvDiskPath, projectRoot) || !isPathInside(dcvDiskPath, dcvDiskFolder)) {
+    console.log(`[X] DCV: Path traversal blocked for ${requestPath}`);
+    console.log("=".repeat(80) + "\n");
+    if (!silentNotFound) res.status(404).end();
+    return true;
+  }
+
+  try {
+    if (!fs.existsSync(dcvDiskPath)) {
+      console.log(`[X] DCV: File not found on disk: ${dcvDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      if (!silentNotFound) res.status(404).end();
+      return true;
+    }
+
+    // Additional check: ensure it's a file, not a directory.
+    if (!fs.statSync(dcvDiskPath).isFile()) {
+      console.log(`[X] DCV: Path is not a file: ${dcvDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      if (!silentNotFound) res.status(404).end();
+      return true;
+    }
+
+    console.log(`[OK] DCV: Serving validation file ${dcvDiskPath}`);
+    console.log("=".repeat(80) + "\n");
+    res.sendFile(dcvDiskPath);
+    return true;
+  } catch (err) {
+    console.log(`[X] DCV: Error serving file: ${err.message}`);
+    console.log("=".repeat(80) + "\n");
+    if (!silentNotFound) res.status(500).end();
+    return true;
+  }
+}
+
+function servePublicUnknownFile(req, res, options = {}) {
+  const silentNotFound = options.silentNotFound ?? false;
+
+  // Public path intended for openly hosted HTTPS content.
+  const publicRootPath = "/pub/unknown";
+
+  // Extract pathname only; strips query params to prevent bypass tricks.
+  const requestPath = new URL(req.url, "http://localhost").pathname;
+
+  if (requestPath !== publicRootPath && !requestPath.startsWith(publicRootPath + "/")) {
+    return false;
+  }
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.status(405).end();
+    return true;
+  }
+
+  const projectRoot = path.resolve(__dirname);
+  const publicDiskFolder = publicUnknownDir;
+  const relativePath =
+    requestPath === publicRootPath
+      ? path.join("pub", "unknown", "index.html")
+      : requestPath.replace(/^\/+/, "");
+  const publicDiskPath = path.resolve(projectRoot, relativePath);
+
+  // Check both project root and public folder boundaries.
+  if (!isPathInside(publicDiskPath, projectRoot) || !isPathInside(publicDiskPath, publicDiskFolder)) {
+    console.log(`[X] PUB: Path traversal blocked for ${requestPath}`);
+    console.log("=".repeat(80) + "\n");
+    if (!silentNotFound) res.status(404).end();
+    return true;
+  }
+
+  try {
+    if (!fs.existsSync(publicDiskPath)) {
+      console.log(`[X] PUB: File not found on disk: ${publicDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      if (!silentNotFound) res.status(404).end();
+      return true;
+    }
+
+    if (!fs.statSync(publicDiskPath).isFile()) {
+      console.log(`[X] PUB: Path is not a file: ${publicDiskPath}`);
+      console.log("=".repeat(80) + "\n");
+      if (!silentNotFound) res.status(404).end();
+      return true;
+    }
+
+    console.log(`[OK] PUB: Serving public file ${publicDiskPath}`);
+    console.log("=".repeat(80) + "\n");
+    res.sendFile(publicDiskPath);
+    return true;
+  } catch (err) {
+    console.log(`[X] PUB: Error serving file: ${err.message}`);
+    console.log("=".repeat(80) + "\n");
+    if (!silentNotFound) res.status(500).end();
+    return true;
+  }
+}
+
+// Static key validation middleware - appears unresponsive without key
+app.use((req, res, next) => {
+  // Allow unauthenticated public path on main app (HTTPS listener).
+  if (servePublicUnknownFile(req, res, { silentNotFound: false })) {
+    return;
+  }
+
+  // Allow unauthenticated validation path(s) for CA DCV files on the main app.
+  // The separate DCV HTTP app below also uses this same helper.
+  if (serveDcvValidationFile(req, res, { silentNotFound: true })) {
+    return;
+  }
+
+  // Check for static key in headers.
   const keyFromHeader = req.get("X-Auth-Key");
-  
+
   // Set high-trust flag on request object (so endpoints can access it)
   req.isHighTrust = false;
 
@@ -371,13 +479,13 @@ app.use((req, res, next) => {
 
   if (safeEqual(keyFromHeader, HT_STATIC_KEY)) {
     req.isHighTrust = true;
-    console.log(`[OK] AUTH: High-trust key provided`);
+    console.log("[OK] AUTH: High-trust key provided");
     console.log("=".repeat(80) + "\n");
     return next();
   }
 
   if (safeEqual(keyFromHeader, STATIC_KEY)) {
-    console.log(`[OK] AUTH: Valid key provided`);
+    console.log("[OK] AUTH: Valid key provided");
     console.log("=".repeat(80) + "\n");
     return next();
   }
@@ -423,7 +531,45 @@ registerRoutes(app, {
   sanitizeFilename,
 });
 
-// Start the server (HTTPS if certificates available, otherwise HTTP)
+// Start a separate plain-HTTP listener for DCV validation files only.
+// This exposes only DCV_VALIDATION_PATH, not authenticated API routes.
+if (envStr("DCV_VALIDATION_PATH", "")) {
+  const dcvHttpApp = express();
+
+  dcvHttpApp.disable("x-powered-by");
+
+  dcvHttpApp.use((req, res) => {
+    res.setHeader("Server", "PhoneHomeWeb");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return res.status(405).end();
+    }
+
+    if (serveDcvValidationFile(req, res, { silentNotFound: false })) {
+      return;
+    }
+
+    return res.status(404).end();
+  });
+
+  http.createServer(dcvHttpApp).listen(DCV_HTTP_PORT, DCV_HTTP_BIND_HOST, () => {
+    console.log("\n" + "=".repeat(80));
+    console.log("DCV HTTP SERVER STARTED - NON-SSL MODE");
+    console.log("=".repeat(80));
+    console.log(`Port: ${DCV_HTTP_PORT}`);
+    console.log(`Listening: ${DCV_HTTP_BIND_HOST}`);
+    console.log(`DCV Path: ${envStr("DCV_VALIDATION_PATH", "")}`);
+    console.log(`Started: ${new Date().toISOString()}`);
+    console.log("=".repeat(80));
+    console.log("Waiting for DCV requests...\n");
+  });
+} else {
+  console.log("DCV_VALIDATION_PATH not configured; DCV HTTP server disabled");
+}
+
+// Start the main server (HTTPS if certificates available, otherwise HTTP)
 if (sslOptions) {
   https.createServer(sslOptions, app).listen(PORT, BIND_HOST, () => {
     console.log("\n" + "=".repeat(80));
@@ -447,4 +593,3 @@ if (sslOptions) {
     console.log("Waiting for requests...\n");
   });
 }
-
